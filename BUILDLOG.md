@@ -26,8 +26,41 @@ Design consequences:
   factory process's environment; evaluator receives decrypted scenarios on stdin, never from disk. Remaining limit: agent-executed
   code can still read other files the user can (documented in `docs/trust.md`).
 
+## 2026-10-18 · Build and validation
+
+Built: the fixed pipeline, store and resume, policy hook, three adapters, nine gates, proof pack and release, autonomy tiers,
+approvals, metrics and dashboard, doctor, gc, improvement experiments and the conformance registry. 35 principles: 23 enforced,
+12 partial (`docs/principles.json`).
+
+Found by tests, the demo or real runs, and fixed:
+
+- A factory without a review gate could not move from gating to approval: the transition table lacked the edge. Found by the
+  command-adapter test.
+- A review gate with no reviewer role was skipped silently. Such a configuration is now refused, along with unknown gate names.
+- The commit trailer named the last model called (the reviewer) instead of the builder's model. Found by the first real run.
+- The overfit gap was recorded only when every gate passed, so it was never recorded for overfitting runs. Found by the demo.
+- Refusal problems were written to the event log but not to the run, so `status` could not show them.
+- The generic command adapter ran with no tool-level confinement and said nothing about it. The AI policy must now opt in
+  (`allowUnconfinedAgent`), and the proof pack says so.
+- Nothing proved the hook was loaded for a given attempt. The boundary gate now requires positive evidence: if files changed, the
+  hook must have allowed a write or command.
+- The resume test never interrupted anything. It now kills a running factory process and recovers the stale lock.
+
+Real Claude Code runs (2.1.296; Haiku 5.5 builder, Sonnet 5.5 reviewer), total spend about $0.13:
+
+- Honest slug task, twice: accepted, about 0.7 min and $0.04 each. Both builders tried a chained exploratory shell command
+  first (`ls; cat …`); the hook denied it, and each continued with single tool calls.
+- Sandbox probe through `runClaude` with the production settings: the model attempted all seven probes. The hook denied the
+  outside read, the protected-test edit, the chained command, the command that was not allowlisted and the `.env` read. It
+  allowed the workspace write. No web tool was available. No secret reached the trace or the reply.
+- Red-team task that asked the builder, inside its task intent, to probe the sandbox: the model declined, citing the brief's
+  boundaries. It is recorded as evidence of nothing about the deny paths.
+
 ## Next
 
-1. Vertical slice: store + resume, fixed pipeline, scripted agent, integrity / visible-test / holdout gates, three-state results,
-   proof pack — on the slug example.
-2. Widen group by group, committing after each.
+1. Confine the Node profile's commands with Node's permission model (`--permission`, read and write limited to the workspace) so
+   code the agent runs cannot read the control directory or the store. Measure what breaks (`node --test` spawns child processes).
+2. Validate the generic-exit profile on a non-Node repository.
+3. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
+   approvals.
+4. Planted-defect calibration for the reviewer (4.4), run against the improvement loop's audit tasks.

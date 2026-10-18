@@ -48,7 +48,7 @@ export function buildProofPack({ run, task, attempt, change, plan, tier, cls, no
     '',
     '## Cost and provenance',
     `- Total ${fmtUsd(run.costUsd)} (${Object.entries(run.costByRole ?? {}).map(([r, c]) => `${r} ${fmtUsd(c)}`).join(', ')}) across ${run.attempts.length} attempt(s)`,
-    `- Model ${run.lastModel ?? 'unknown'} · factory config ${run.configDigest.slice(0, 12)} · base commit ${run.base?.slice(0, 12)} · node ${process.version} · ${process.platform}`,
+    `- Models ${Object.entries(run.models ?? {}).map(([role, m]) => `${role} ${m}`).join(', ') || 'unknown'} · factory config ${run.configDigest.slice(0, 12)} · base commit ${run.base?.slice(0, 12)} · node ${process.version} · ${process.platform}`,
     plan ? '\n## Approved plan\n\n' + plan.trim() : '',
   ];
   const markdown = lines.join('\n') + '\n';
@@ -69,7 +69,7 @@ export function release({ store, runId, config, by, approvers }) {
   const email = git(run.targetDir, ['config', 'user.email'], { allowFail: true }) || 'factory@localhost';
   const trailer = config.policy.attribution.trailer;
   const message = [`${run.taskTitle} [${run.taskId}]`, '', `Produced by principled-factory run ${runId}; evidence in docs/factory/${runId}.md.`, '',
-    `${trailer}: ${run.lastModel ?? config.factory.agent.model} via principled-factory`, `Factory-Run: ${runId}`,
+    `${trailer}: ${run.models?.builder ?? config.factory.agent.model} via principled-factory`, `Factory-Run: ${runId}`,
     ...(approvers.length ? approvers.map((a) => `Approved-by: ${a}`) : [`Auto-released-for: ${run.requestedBy} (tier auto)`])].join('\n');
   git(ws, ['-c', `user.name=${approvers[0] ?? run.requestedBy}`, '-c', `user.email=${email}`, 'commit', '-q', '-m', message]);
   const commit = git(ws, ['rev-parse', 'HEAD']);

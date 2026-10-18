@@ -371,7 +371,7 @@ test('[P6.3][P6.4][P9.3] metrics count failed spend, cost per accepted change, t
     assert.equal(m.outcomes.accepted, 1);
     assert.ok(m.cost.failedUsd > 0);
     assert.ok(m.cost.perAcceptedChangeUsd > m.cost.failedUsd / 2);
-    assert.ok(m.outcomes.overfitGapPts === null || m.outcomes.overfitGapPts >= 0);
+    assert.ok(m.outcomes.overfitGapPts > 0, 'the overfit run passed every visible test and only half of the hidden scenarios');
     const holdouts = m.gates.find((g) => g.id === 'holdouts');
     assert.ok(holdouts.failedFirst >= 1);
     const html = path.join(ex.dir, 'dash.html');

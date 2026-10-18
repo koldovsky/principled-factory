@@ -56,7 +56,7 @@ export function computeMetrics(store, { config } = {}) {
       acceptedRate: round(ratio(accepted.length, built.length)), firstPassRate: round(ratio(firstPass.length, accepted.length)),
       changeFailureRate: round(ratio(escaped, released.length)), escapedDefects: escaped,
       medianLeadTimeMinutes: round(median(leadTimes), 1), humanMinutesPerChange: round(median(humanMinutes), 1),
-      overfitGapPts: round(median(gaps), 1),
+      overfitGapPts: gaps.length ? round(gaps.reduce((a, b) => a + b, 0) / gaps.length, 1) : null,
     },
     cost: {
       totalUsd: round(totalUsd), failedUsd: round(failedUsd), perAcceptedChangeUsd: round(ratio(totalUsd, accepted.length)),

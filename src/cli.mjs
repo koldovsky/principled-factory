@@ -43,7 +43,8 @@ function printRun(run) {
   console.log(`${run.id}  ${run.taskId}  state=${run.state}${run.reason ? `  (${run.reason})` : ''}`);
   if (run.problems?.length) for (const p of run.problems) console.log(`  - ${p}`);
   console.log(`  attempts ${run.attempts?.length ?? 0}/${run.maxAttempts ?? '?'} · cost $${(run.costUsd ?? 0).toFixed(4)}${run.unknownCost ? ' (+unknown)' : ''}${run.tier ? ` · class ${run.changeClass} → ${run.tier}` : ''}`);
-  for (const g of last?.gates ?? []) console.log(`  ${g.verdict.padEnd(10)} ${g.id.padEnd(16)} ${g.summary}`);
+  for (const g of [last?.boundary, ...(last?.gates ?? [])].filter(Boolean)) console.log(`  ${g.verdict.padEnd(10)} ${g.id.padEnd(16)} ${g.summary}`);
+  for (const na of last?.notApplicable ?? []) console.log(`  ${'n/a'.padEnd(10)} ${na}`);
   if (run.proofDigest && run.state === 'awaiting-release-approval') console.log(`  proof pack ${run.proofDigest} — factory proof ${run.id}`);
   if (run.escalation && run.state === 'needs-human') console.log(`  question for ${run.escalation.owner}: ${run.escalation.question} (default ${run.escalation.defaultAction} at ${run.escalation.deadline})`);
   if (run.release) console.log(`  released to branch ${run.release.branch} at ${run.release.commit.slice(0, 12)} · rollback target ${run.release.rollbackTarget.slice(0, 12)} · not pushed`);

@@ -49,6 +49,16 @@ function policyFor(role, { run, config, store, task }) {
   };
 }
 
+// Overfit gap (principle 4.2): visible pass rate against hidden pass rate, recorded whenever holdouts ran — pass or fail.
+function recordOverfit(run, attempt, hold) {
+  const visible = attempt.gates.find((g) => g.id === 'visible-tests');
+  if (!visible || !hold.evidence?.total) return;
+  const tests = visible.evidence.tests ?? [];
+  run.overfit = run.overfit ?? [];
+  run.overfit.push({ attempt: run.attempt, visibleRate: tests.length ? tests.filter((t) => t.ok).length / tests.length : null,
+    holdoutRate: hold.evidence.passed / hold.evidence.total });
+}
+
 function addCost(run, role, cost) {
   if (cost === null || cost === undefined) { run.unknownCost = true; return; }
   run.costUsd = Number((run.costUsd + cost).toFixed(6));
@@ -80,6 +90,7 @@ async function callAgent(role, ctx, extra = {}) {
     });
   addCost(run, role, result.costUsd);
   run.lastModel = result.model ?? model;
+  run.models = { ...(run.models ?? {}), [role]: result.model ?? model };
   saveRun(store, run);
   appendEvent(store, run.id, 'agent', { role, status: result.status, costUsd: result.costUsd, denials: result.denials.length, attempt: run.attempt });
   return result;
@@ -208,20 +219,13 @@ async function gating(ctx) {
       continue;
     }
     attempt.gates.push(result);
+    if (id === 'holdouts') recordOverfit(run, attempt, result);
     saveRun(store, run);
     // UNSAFE test switch 'fail-closed': counts missing evidence (NOT-EARNED) as a pass, to show what fail-closed prevents.
     const failOpen = skip(run, 'fail-closed') && result.verdict === NOT_EARNED;
     if (result.verdict !== PASS && !failOpen) {
       return failAttempt(ctx, `gate ${id}: ${result.verdict}`, result.feedback, result);
     }
-  }
-  const visible = attempt.gates.find((g) => g.id === 'visible-tests');
-  const hold = attempt.gates.find((g) => g.id === 'holdouts');
-  run.overfit = run.overfit ?? [];
-  if (visible && hold?.evidence?.total) {
-    const vTests = visible.evidence.tests ?? [];
-    const vRate = vTests.length ? vTests.filter((t) => t.ok).length / vTests.length : null;
-    run.overfit.push({ attempt: run.attempt, visibleRate: vRate, holdoutRate: hold.evidence.passed / hold.evidence.total });
   }
   saveRun(store, run);
   if (config.factory.gates.order.includes('review') && config.factory.roles.reviewer) {

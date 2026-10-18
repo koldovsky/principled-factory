@@ -1,7 +1,7 @@
 {
   "name": "principled-factory",
   "version": "0.1.0",
-  "description": "A small agentic software factory that implements 35 factory principles, each backed by code and a negative test.",
+  "description": "A small agentic software factory that implements 35 factory principles, each mapped to code and tagged tests, with an honest status per principle.",
   "type": "module",
   "bin": { "factory": "bin/factory.mjs" },
   "engines": { "node": ">=22.17" },
@@ -10,6 +10,6 @@
     "conformance": "node bin/factory.mjs conformance",
     "demo": "node scripts/demo.mjs"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "private": true
 }

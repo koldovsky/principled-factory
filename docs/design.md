@@ -1,117 +1,127 @@
 # Design
 
-A small agentic software factory that implements the 35 principles in [principles.md](principles.md). Node.js 22+, no runtime
-dependencies, Windows and Linux. Every principle maps to a mechanism in code and at least one test tagged with its ID; `factory
-conformance` fails if any principle has no passing test.
+A small agentic software factory that implements the 35 principles in [principles.md](principles.md). Node.js 22.17+, no runtime
+dependencies, Windows and Linux. Every principle maps to a mechanism in code and to tests tagged with its ID. `factory conformance`
+fails if any principle has no passing test, or lacks a required `mechanism-off` test. The honest status of each principle is in
+[principles.json](principles.json), and the limits that apply to all of them are in [trust.md](trust.md).
 
 ## Three places, three owners
 
 | Place | Contents | Who may write |
 |---|---|---|
-| **Control** (`--control`) | factory config, AI policy, task specs, holdouts, knowledge (skills), maintainability rules | humans, via review; the factory only reads it |
-| **Target** (`--target`) | the product repository | humans; the factory writes only a new branch on release |
-| **Store** (`--store`) | runs, events, evidence, traces, approvals, metrics | the factory controller |
+| **Control** (`--control`) | factory config, AI policy, task specs, holdouts and evaluators, knowledge, maintainability rules | humans, via review; the factory only reads it |
+| **Target** (`--target`) | the product repository | humans; the factory adds only a new local branch on release |
+| **Store** (`--store`) | runs, hash-linked events, traces, approvals, proof packs, workspaces | the factory controller |
 
-Builders work in a **disposable workspace** inside the store: a fresh copy of the target per run. Holdouts never enter it.
+Builders work in a **disposable workspace**: a detached git worktree of the target at the base commit, inside the store. Holdouts
+never enter it.
 
 ## A run
 
 ```
-config digest approved? ─ policy & trifecta ─ admission ─ review capacity ─ readiness
-        │ (refuse with a reason on any failure)
+config digest approved? ─ model & tools in policy ─ kill switch ─ daily budget ─ review capacity ─ readiness ─ admission
+        │ (refused with a reason and the list of problems on any failure)
         ▼
- size → plan (medium/large) ──► human approves plan ──┐   (pausable step, resumable)
-        │ small                                       │
-        ▼                                             ▼
- workspace + context pack ─► builder agent ─► gates (cheapest first) ─► holdouts (separate process, count only)
-        ▲                                         │ FAIL / NOT-EARNED, attempts left
-        └──────────── feedback (details for visible gates, counts for holdouts) ◄┘
-                                                  │ attempts exhausted → needs-human (escalation contract)
+ baseline: fail-to-pass tests must fail on the base commit
+        ▼
+ size → plan (medium/large) ──► a human approves the plan digest ──┐
+        │ small                                                   │
+        ▼                                                         ▼
+ context pack (.factory/) ─► builder agent ─► boundary evidence ─► gates, cheapest first ─► review (fresh process, refute)
+        ▲                                         │ FAIL / NOT-EARNED and attempts left
+        └──── feedback (details for visible gates, counts only for holdouts) ◄┘
+                                                  │ attempts exhausted → needs-human: owner, question, default action, deadline
                                                   ▼ all PASS
- adversarial review ─► proof pack + provenance ─► risk class → autonomy tier → 0/1/2 human approvals
+ proof pack + digest ─► risk class → autonomy tier → 0, 1 or 2 human approvals citing the digest
                                                   ▼
-                       release: patch on a new branch, rollback target recorded, never pushed
+ release: commit on a new local branch with trailers; rollback target recorded; never pushed
                                                   ▼
-                       incident intake → metrics, autonomy demotion, failure intake for improvement
+ incidents → change-failure rate, autonomy demotion, failure intake for improvement experiments
 ```
 
-The graph is fixed in `src/pipeline.mjs`. Agents act only inside the plan, build and review steps; their messages never set a status.
+The stage graph and its allowed transitions are fixed in code (`src/store.mjs`, `src/pipeline.mjs`). Agents act only inside the
+plan, build and review stages; their messages never set a status. Every stage is checkpointed, so `factory resume` continues an
+interrupted or stopped run. A run whose process died needs `--recover` to take over its stale lock.
 
 ## Gates
 
 Each gate returns `PASS`, `NOT-EARNED` (nothing was really verified: missing or empty evidence) or `FAIL`, with evidence and a
-remediation hint. Cheap gates run first; a failing cheap gate skips the expensive ones.
+remediation hint. Any result other than `PASS` blocks acceptance. Gates run in the configured order and stop at the first
+failure. A gate whose scope is empty, such as mutation testing on a docs-only change, is listed as *not applicable* in the proof
+pack and never counted as a pass.
 
-| Order | Gate | Principle |
+| Order | Gate | Checks | Principle |
+|---|---|---|---|
+| 0 | Boundary evidence | if files changed, the policy hook allowed a write or command in this attempt | 4.3, 5.2 |
+| 1 | Integrity | protected files unchanged against digests taken before the agent ran | 4.2, 5.4 |
+| 2 | Diff budget | a change exists and stays within the reviewable size | 8.1 |
+| 3 | Maintainability | dependency rules, duplication, file size on changed files | 4.7 |
+| 4 | Visible tests | the profile's test command; required tests ran and every test passed | 4.1 |
+| 5 | Repeat | the same outcomes on repeated runs | 4.5 |
+| 6 | Mutation | light mutants on changed lines must be killed by the tests | 4.5 |
+| 7 | Holdouts | a separate evaluator process runs hidden scenarios; the builder learns only the count | 4.2 |
+| 8 | Review | a read-only reviewer in a fresh process tries to refute; findings must cite a real file and line | 4.4 |
+
+The gate order and options live in `factory.json`. The configuration is refused if it names an unknown gate, or a review gate
+without a reviewer role, because either would skip verification silently.
+
+## Agent adapters
+
+| Adapter | Boundary | Cost |
 |---|---|---|
-| 1 | Integrity — protected files (tests, specs, `.factory/`) unchanged | 4.2, 5.4 |
-| 2 | Diff budget — changed lines within the slice limit | 8.1 |
-| 3 | Maintainability — dependency direction, duplication, file size | 4.7 |
-| 4 | Profile checks — lint/build/visible tests from the stack profile | 3.2, 4.1 |
-| 5 | Repeat — visible tests k times, all identical | 4.5 |
-| 6 | Mutation — light mutants on changed lines must be killed | 4.5 |
-| 7 | Holdouts — separate process, aggregate-only result | 4.2 |
-| 8 | Review — fresh-context reviewer, refute by default, evidence-bound findings | 4.4 |
+| `claude` | headless `claude -p` with `--tools`, `dontAsk` mode and exact allow rules, no MCP servers, no user settings, skills or slash commands, `--max-budget-usd`, and a PreToolUse **policy hook** (`src/policy/hook.mjs`) | reported by Claude Code |
+| `scripted` | deterministic behaviours for tests and the demo; every tool call goes through the same policy decision | declared by the script |
+| `command` | any CLI that reads a brief on stdin. **No tool-level confinement:** the AI policy must set `allowUnconfinedAgent`, and the proof pack says so | unknown |
 
-At admission the visible tests must fail on the original target (they prove the change) — principle 4.5.
+The policy hook confines file tools to the workspace, protects task-protected files and `.factory/`, applies data-boundary globs,
+allows only exact allowlisted commands (no chaining, pipes, redirects or substitution), denies network tools to roles without
+external communication, and denies everything while the kill switch is engaged. It fails closed on any error and writes each
+decision to the trace.
 
-## Boundaries enforced on the builder (Claude Code adapter)
-
-Headless `claude -p` with: `--permission-mode dontAsk`, an explicit tool list, `--strict-mcp-config` with no servers, a spend cap
-(`--max-budget-usd`), and generated settings whose **PreToolUse hook** denies:
-
-- file access outside the workspace (covers holdouts, control, store, other clients' data);
-- writes to protected paths (tests, specs, `.factory/`);
-- network tools and network commands for roles without external communication;
-- destructive commands (`git push`, `rm -rf` outside the workspace, history rewrites);
-- everything, when the kill switch is engaged (the hook reads it on every call).
-
-Each hook decision is appended to the run trace as an `execute_tool` span.
-
-**Honest limit:** this is policy-level isolation in the same OS account. OS-level isolation (containers, separate users, network
-allowlists) is a deployment contract, documented in [trust.md](trust.md) — not something a local Node process can create.
+**Honest limit:** this is policy-level isolation in one OS account. The allowlisted commands run code the agent wrote, and the
+hook cannot see what that code does. [trust.md](trust.md) states the consequences and the deployment contract that removes them.
 
 ## Principle map
 
-| # | Principle | Mechanism | Module |
+| # | Principle | Mechanism | Code |
 |---|---|---|---|
-| 1.1 | Humans own intent | task intent must carry a human approval bound to the task digest | `approvals`, `task` |
-| 1.2 | Admit only verifiable work | schema requires acceptance cases + non-functionals; refusal is recorded | `task` |
-| 1.3 | Research and plan, scaled | size class → planner role + plan approval for medium/large | `pipeline`, `roles` |
-| 2.1 | Repo as system of record | plan, decisions and proof pack committed with the release; knowledge lives in control | `delivery`, `context` |
-| 2.2 | Context budget | generated map with a line budget; knowledge listed, loaded on demand | `context` |
-| 2.3 | State outside the context | atomic stage checkpoints, progress file, `resume` | `store`, `pipeline` |
-| 2.4 | Isolated context per step | separate processes per role, each with a brief (objective, output, tools, boundaries) | `roles` |
-| 3.1 | Own the control flow | fixed stage graph; agent output never sets status | `pipeline` |
-| 3.2 | Fast feedback, cheapest first | gate order by cost, skip expensive gates on cheap failure, remediation text | `gates` |
-| 3.3 | Bounded runs, escalation | attempts, wall time, spend cap, kill switch, needs-human with question and default | `pipeline`, `budget`, `killswitch` |
-| 4.1 | Deterministic before judgement | review runs only after all deterministic gates pass; reviewer never sees builder narrative | `gates/review` |
-| 4.2 | Protected and hidden oracle | integrity gate; holdouts outside workspace, separate process, count-only feedback, leak → retire | `gates/integrity`, `gates/holdout` |
-| 4.3 | Evidence over assertions | three-state results, missing evidence = NOT-EARNED, content hashes | `gates/result`, `evidence` |
-| 4.4 | Adversarial review | reviewer role, refute-by-default prompt, findings need file:line evidence, planted-defect calibration | `gates/review` |
-| 4.5 | Layered proof | baseline-must-fail, repeat consistency, light mutation testing | `gates/baseline`, `gates/repeat`, `gates/mutation` |
-| 4.6 | Product observable to agent | profile `observe` commands in the brief and allowed by the hook | `context`, `policy` |
-| 4.7 | Maintainability target | dependency-direction rules, duplication, file-size sensors | `gates/maintainability` |
-| 5.1 | No lethal trifecta | roles declare capabilities; config with all three is rejected | `policy/trifecta` |
-| 5.2 | Least privilege, sandbox | disposable workspace, scrubbed env, hook confinement, network denied | `workspace`, `policy/hook` |
-| 5.3 | Separation of duties | agents can't approve; approver ≠ requester; two-key tiers need two humans | `approvals` |
-| 5.4 | Config as supply chain | config digest must be human-approved; agents can't write control or `.factory/` | `config`, `policy/hook` |
-| 6.1 | Standard tracing | OTel-GenAI-shaped spans in JSONL, content capture off by default | `trace` |
-| 6.2 | Traceability, provenance | requirement → gate → evidence map; versions recorded; `Assisted-by` trailer | `provenance` |
-| 6.3 | Cost per accepted change | cost from agent output, failed attempts counted, per accepted change | `cost`, `metrics` |
-| 6.4 | Outcome metrics, visible | report and static dashboard lead with outcomes and stability | `metrics`, `report` |
-| 7.1 | Earned autonomy | risk classifier → tier; promotion after N clean releases, demotion on incident | `autonomy` |
-| 7.2 | Reversible delivery | patch on new branch, never pushed; rollback target; incident intake | `delivery` |
-| 7.3 | Fix delivery first | `doctor`: git, deterministic tests, CI present, profile commands; unattended runs need it | `doctor` |
-| 8.1 | Protect review capacity | WIP limit on pending approvals; diff budget; «not verified» list in proof pack | `approvals`, `gates` |
-| 8.2 | Engineer comprehension | approval must cite the proof-pack digest; plan + decisions in the proof pack | `approvals`, `report` |
-| 8.3 | AI policy, accountability | approved models/tools, unattended classes, data boundary; identities on every approval | `policy/ai-policy` |
-| 9.1 | Measured self-improvement | failure intake, registered experiments, held-out audit, can't touch graders, proposal only | `improve` |
-| 9.2 | Entropy control | `gc` runs sensors and proposes small cleanup tasks (need intent approval) | `gc` |
-| 9.3 | Everything earns its place | gate statistics; conformance registry with negative tests | `metrics`, `conformance` |
-| 9.4 | Portable core | stack profiles; agent adapters (Claude Code, generic command, scripted) | `profiles`, `agents` |
+| 1.1 | Humans own intent | a run needs a human intent approval bound to the task file's digest | `approvals`, `task` |
+| 1.2 | Admit only verifiable work | acceptance cases mapped to requirements, decided non-functionals, existing protected tests; refusals recorded with reasons | `task`, `pipeline` |
+| 1.3 | Research and plan, scaled | medium and large tasks run a read-only planner and stop for plan approval | `pipeline`, `context` |
+| 2.1 | Repo as system of record | knowledge lives in control; the proof pack and plan are committed with the release | `context`, `delivery` |
+| 2.2 | Context budget | a generated map with a line budget; knowledge listed and read on demand | `context` |
+| 2.3 | State outside the context | atomic run files, hash-linked events, progress file, resume, stale-lock recovery | `store`, `pipeline` |
+| 2.4 | Isolated context per step | planner, builder and reviewer as separate processes with their own briefs and tools | `agents`, `context` |
+| 3.1 | Own the control flow | fixed transition table; agent output never sets status | `store`, `pipeline` |
+| 3.2 | Fast feedback, cheapest first | configured gate order, stop at first failure, remediation written to progress | `pipeline`, `gates/*` |
+| 3.3 | Bounded runs, escalation | attempts, spend caps, timeouts, kill switch, needs-human with owner, question, default and deadline; `sweep` | `pipeline`, `store`, `cli` |
+| 4.1 | Deterministic before judgement | review runs only after every deterministic gate passed; reviewer never sees the builder's narrative | `pipeline`, `gates/review` |
+| 4.2 | Protected and hidden oracle | integrity gate; hook protects files; holdouts outside the workspace, sealable, separate process, counts only; leak scan retires sets | `gates/deterministic`, `gates/holdout`, `holdouts`, `policy/hook` |
+| 4.3 | Evidence over assertions | three-state results; missing evidence is NOT-EARNED; boundary evidence; no silently skipped gates | `gates/result`, `gates/boundary`, `config` |
+| 4.4 | Adversarial review | refute-by-default brief; findings without a real file:line are dropped; unusable output goes to a human | `gates/review`, `context` |
+| 4.5 | Layered proof | baseline must fail, repeat consistency, light mutation testing | `gates/deterministic`, `gates/mutation` |
+| 4.6 | Product observable to the agent | observe commands in the map and in the builder's command allowlist | `context`, `config`, `pipeline` |
+| 4.7 | Maintainability target | dependency-direction, duplication and file-size sensors | `gates/maintainability` |
+| 5.1 | No lethal trifecta | roles declare capabilities; a role with all three is refused | `config` |
+| 5.2 | Least privilege, sandbox | worktree per run, scrubbed environment, hook confinement, exact command allowlist, no network tools | `workspace`, `policy/hook`, `agents/claude`, `util` |
+| 5.3 | Separation of duties | agents cannot approve; the requester cannot approve; two-human tiers need two people | `approvals` |
+| 5.4 | Config as supply chain | the config digest needs a human approval; a mid-run change stops the run; agents cannot write factory files | `config`, `pipeline`, `policy/hook` |
+| 6.1 | Standard tracing | OTel-GenAI-shaped spans for workflow, agents, tools and gates; content capture off by default | `trace`, `policy/hook` |
+| 6.2 | Traceability, provenance | requirement-to-evidence table, digests and versions in the proof pack, `Assisted-by` trailer | `delivery`, `store` |
+| 6.3 | Cost per accepted change | cost per role and run, failed spend counted, per accepted change | `pipeline`, `metrics` |
+| 6.4 | Outcome metrics, visible | report and static dashboard lead with outcomes and stability | `metrics`, `dashboard` |
+| 7.1 | Earned autonomy | change classes → tiers; promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy` |
+| 7.2 | Reversible delivery | local branch, never pushed; rollback target; incident intake | `delivery` |
+| 7.3 | Fix delivery first | `doctor` checks git, clean tree, CI config, tools, deterministic tests; runs need a recent pass | `doctor` |
+| 8.1 | Protect review capacity | WIP limit on waiting approvals; diff budget; «not verified» list in the proof pack | `approvals`, `gates/deterministic`, `pipeline` |
+| 8.2 | Engineer comprehension | approval must cite the current proof-pack digest; plan and evidence travel with the change | `approvals`, `delivery` |
+| 8.3 | AI policy, accountability | approved models and tools, unattended classes, data boundary, approver list; named approvals | `config`, `approvals` |
+| 9.1 | Measured self-improvement | failure intake, registered experiments, held-out audit tasks, graders off limits, proposal only | `improve` |
+| 9.2 | Entropy control | `gc` drafts small cleanup tasks from sensor findings and stale links | `gc` |
+| 9.3 | Everything earns its place | gate statistics; conformance registry with mechanism-off tests | `metrics`, `conformance` |
+| 9.4 | Portable core | stack profiles; agent adapters behind one interface | `profiles/`, `agents` |
 
 ## Deliberately not built
 
-A distributed scheduler, containers, signed attestations and production deployment. The factory stops at a reviewed branch and a
-recorded rollback target; [trust.md](trust.md) states what infrastructure must add for unattended production use.
+A scheduler, containers, signed attestations, canaries and production deployment. The factory stops at a reviewed local branch
+and a recorded rollback target. [trust.md](trust.md) states what infrastructure must add for unattended use.
