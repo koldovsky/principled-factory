@@ -140,7 +140,7 @@ releases are local branches that are never pushed.
   `mechanism-off` tests. Each switches off named mechanisms (recorded as an unsafe run that can never be released) and shows that
   the attack then succeeds.
 - **Real model, 18 October 2026 (Claude Code 2.1.296, Claude Haiku 5.5 builder, Claude Sonnet 5.5 reviewer):**
-  - Three honest runs of the slug task, the third on the final code: accepted end to end, released to a local branch with
+  - Three honest runs of the slug task, the third after the review fixes: accepted end to end, released to a local branch with
     provenance trailers. Each cost about $0.04 and took under a minute. The hook decided every tool call and denied the
     builders' chained or non-allowlisted shell commands; they continued with file tools.
     The release approval used a second asserted identity, so it shows the approval path works, not that two real people were
