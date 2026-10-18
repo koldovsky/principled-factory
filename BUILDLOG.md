@@ -128,8 +128,35 @@ Built:
   log also shows the holdout evaluator reading them, because the evaluator still runs the candidate unconfined.
 
 Not done, and stated in docs/trust.md: the holdout evaluator, network egress, the test report's integrity and other profiles.
-`npm test` (146 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22, Linux and a real Claude Code builder
-typing the confined commands are not verified yet.
+`npm test` (146 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22 and Linux are not verified yet. A real
+Claude Code builder typing the confined test command is verified in the next section.
+
+## 2026-10-18 · A real builder on the confined commands (Claude Code 2.1.296; Haiku 5.5 builder, Sonnet 5.5 reviewer)
+
+One honest slug run on commit 4ad21e8, set up as the earlier real runs were: the slug example with the `claude` adapter, and a
+passing `doctor`, confinement check included. The run took 39 seconds and cost $0.0399 (builder $0.0049, reviewer $0.0350).
+Observed in the run's trace and the builder's Claude Code result:
+
+- The builder read `.factory/MAP.md` and tried a chained `ls -la; ls -la .factory; cat slug.mjs …` first, which the hook denied,
+  as in all four earlier real builder runs. It continued with file tools and wrote `slug.mjs`. Then it typed the confined test
+  command from the map with a file path appended: `node --permission --allow-fs-read=. --allow-fs-write=. --no-experimental-sqlite
+  --experimental-test-isolation=none --test test/slug.test.mjs`. The hook allowed it, because a file path is an operand. The
+  earlier builders had all typed `node --test --test-reporter=tap`; after a confined command the hook would deny that option, and
+  this builder did not add it.
+- Claude Code did not deny it: `permission_denials` held only the chained command that the hook had denied. With a path
+  appended, only the `Bash(<confined command>:*)` rule can match, so the dontAsk layer of Claude Code 2.1.296 matches a prefix rule
+  that contains `=` and `.`. The way the rules are written needed no fix.
+- The run was accepted: all nine checks passed, with mutation at 4/6 and holdouts at 8/8. It was released to a local branch on a
+  second asserted identity's approval, and the commit carries `Assisted-by: claude-haiku-5-5`.
+
+What this run does not show:
+
+- The command's output. `--output-format json` with `--no-session-persistence` keeps no tool results. "All 5 visible tests
+  pass" is the builder's own report; the gates ran the tests themselves.
+- The bare command with nothing appended, which the exact rule `Bash(<confined command>)` covers.
+- The confined `demo.mjs` command, which the builder did not run.
+
+Total real-model spend is now about $0.21.
 
 ## 2026-10-18 · Confining the holdout evaluator (Windows 11, Node 24.18)
 
@@ -178,11 +205,9 @@ are not verified yet.
 
 ## Next
 
-1. Run one honest Claude Code task to check that a real builder types the confined commands and that Claude Code's allow rules
-   match them.
-2. Run the candidate in a process of its own, driven by the evaluator over a pipe, so that hostile code cannot rewrite the
+1. Run the candidate in a process of its own, driven by the evaluator over a pipe, so that hostile code cannot rewrite the
    holdout result.
-3. Validate the generic-exit profile on a non-Node repository.
-4. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
+2. Validate the generic-exit profile on a non-Node repository.
+3. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
    approvals.
-5. Planted-defect calibration for the reviewer (4.4), run against the improvement loop's audit tasks.
+4. Planted-defect calibration for the reviewer (4.4), run against the improvement loop's audit tasks.
