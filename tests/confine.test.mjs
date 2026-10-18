@@ -1,12 +1,14 @@
-// Confinement of code the agent wrote: Node's permission model around the profile's commands (principles 4.2, 5.2, 7.3).
+// Confinement of code the agent wrote: Node's permission model around the profile's commands and the holdout evaluator
+// (principles 4.2, 5.2, 7.3).
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { confineArgv, confineCommand, confineProfile, probeConfinement } from '../src/confine.mjs';
+import { confineArgv, confineCommand, confineEvaluator, confineProfile, probeConfinement } from '../src/confine.mjs';
 import { loadConfig, loadProfile } from '../src/config.mjs';
+import { holdoutGate } from '../src/gates/holdout.mjs';
 import { setupExample } from '../scripts/example.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +50,30 @@ test('[P5.2] an option appended to the confined command widens its grant, which 
   assert.equal(widened.result.read, 'allowed');
   assert.equal(widened.ok, false);
   assert.match(widened.problems.join('; '), /reading outside the workspace was allowed/);
+});
+
+test('[P5.2] the holdout evaluator may read only its own directory and the workspace, by real path, and write nothing', () => {
+  const evaluator = path.join(EXAMPLE_CONTROL, 'evaluators', 'slug-holdout.mjs');
+  const real = (p) => fs.realpathSync.native(p);
+  assert.deepEqual(confineEvaluator({ evaluator, ws: here }), ['node', '--permission', `--allow-fs-read=${real(path.dirname(evaluator))}`,
+    `--allow-fs-read=${real(here)}`, '--no-experimental-sqlite', real(evaluator)]);
+});
+
+test('[P4.2][P5.2] an evaluator outside control/evaluators is refused: its directory is what the candidate may read', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-confine-'));
+  made.push(dir);
+  const control = path.join(dir, 'control');
+  fs.cpSync(EXAMPLE_CONTROL, control, { recursive: true });
+  // Run from the control directory itself, the evaluator would hand the candidate the holdouts next to it.
+  fs.copyFileSync(path.join(control, 'evaluators', 'slug-holdout.mjs'), path.join(control, 'slug-holdout.mjs'));
+  const f = path.join(control, 'holdouts', 'set-a.json');
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), evaluator: '../slug-holdout.mjs' }));
+  const ws = path.join(dir, 'ws');
+  fs.mkdirSync(ws);
+  const result = await holdoutGate({ config: loadConfig(control), task: { holdouts: ['set-a'] }, ws, store: { holdouts: path.join(dir, 'holdouts.json') },
+    changedContents: {} });
+  assert.equal(result.verdict, 'NOT-EARNED');
+  assert.match(result.evidence.sets[0].summary, /must be a file under control\/evaluators, not \.\.\/slug-holdout\.mjs/);
 });
 
 test('[P7.3] doctor proves the confinement on this machine before any agent runs', async () => {

@@ -289,9 +289,11 @@ function notVerifiedList(ctx) {
   if (adapter === 'scripted') items.push('agent adapter "scripted": boundaries enforced by the factory\'s policy function, not by Claude Code\'s hook');
   if (adapter === 'command') items.push('agent adapter "command": NO tool-level confinement; only the external CLI\'s own settings limited it, and its cost is unknown');
   items.push(config.profile.confined
-    ? 'code the agent wrote ran under Node\'s permission model, its files limited to the workspace; not confined: its network access, '
-      + 'its own test report (same process) and the holdout evaluator, which runs the candidate unconfined (docs/trust.md)'
-    : 'isolation is policy-level in one OS account: code the agent wrote and ran (tests) could read other files (docs/trust.md)');
+    ? 'code the agent wrote ran under Node\'s permission model, its files limited to the workspace and read-only in the holdout evaluator; '
+      + 'not confined: its network access, and the reports of the processes it ran in (its own test report and the holdout evaluator\'s result), '
+      + 'which deliberately hostile code could rewrite (docs/trust.md)'
+    : 'isolation is policy-level in one OS account: code the agent wrote and ran (tests, the holdout evaluator) could read and write other files '
+      + '(docs/trust.md)');
   for (const na of ctx.run.attempts.at(-1)?.notApplicable ?? []) items.push(`not applicable — ${na}`);
   const mutation = ctx.run.attempts.at(-1)?.gates.find((g) => g.id === 'mutation');
   for (const s of mutation?.evidence?.survived ?? []) items.push(`mutant survived at ${s.file}:${s.line} (${s.operator}): no test pins this line`);

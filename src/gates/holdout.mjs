@@ -1,11 +1,14 @@
 // Holdout gate (principle 4.2): scenarios the builder never sees, run by a separate process outside the workspace,
-// reported back to the builder as counts only. A set whose inputs appear in the candidate is retired.
+// reported back to the builder as counts only. A set whose inputs appear in the candidate is retired. With a confined
+// profile the evaluator runs under Node's permission model: it and the candidate it imports may read the workspace and the
+// evaluator's directory, and write nothing (src/confine.mjs).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FAIL, NOT_EARNED, PASS, gateResult } from './result.mjs';
+import { confineEvaluator } from '../confine.mjs';
 import { findLeaks, loadSet, retireSet, setStatus } from '../holdouts.mjs';
-import { runProcess, scrubEnv } from '../util.mjs';
+import { isInside, runProcess, scrubEnv } from '../util.mjs';
 
 export async function holdoutGate({ config, task, ws, store, changedContents, shouldStop }) {
   const opts = { requireSealed: config.factory.holdouts?.requireSealed ?? false, keyEnv: config.factory.holdouts?.keyEnv ?? 'FACTORY_HOLDOUT_KEY' };
@@ -24,23 +27,34 @@ export async function holdoutGate({ config, task, ws, store, changedContents, sh
       sets.push({ id, digest, verdict: FAIL, summary: `holdout content appeared in the candidate; set ${id} retired`, passed: 0, total: set.scenarios.length, leaks });
       continue;
     }
-    const evaluator = path.join(config.controlDir, 'evaluators', set.evaluator);
-    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'factory-holdout-'));
+    const evaluators = path.join(config.controlDir, 'evaluators');
+    const evaluator = path.join(evaluators, set.evaluator);
+    // Confined, the candidate may read the evaluator's directory, so that must never be the control directory or the holdouts.
+    if (!fs.existsSync(evaluator) || !isInside(path.dirname(evaluator), evaluators)) {
+      sets.push({ id, digest, verdict: NOT_EARNED, summary: `evaluator for ${id} must be a file under control/evaluators, not ${set.evaluator}`, passed: 0,
+        total: set.scenarios.length });
+      continue;
+    }
+    const scratch = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'factory-holdout-')));
     try {
-      const res = await runProcess({ command: 'node', args: [evaluator], cwd: scratch, stdin: JSON.stringify(set.scenarios),
-        env: scrubEnv({ FACTORY_CANDIDATE_DIR: ws }), timeoutMs: set.timeoutMs ?? 120_000, shouldStop });
+      const candidate = fs.realpathSync.native(ws);
+      const [command, ...args] = config.profile.confined ? confineEvaluator({ evaluator, ws: candidate }) : ['node', evaluator];
+      const res = await runProcess({ command, args, cwd: scratch, stdin: JSON.stringify(set.scenarios),
+        env: scrubEnv({ FACTORY_CANDIDATE_DIR: candidate }), timeoutMs: set.timeoutMs ?? 120_000, shouldStop });
+      // Kept as evidence whatever the outcome, and never shown to the builder: a denial inside the evaluator shows up here.
+      const stderr = res.stderr ? { stderr: res.stderr.slice(0, 2000) } : {};
       let out = null;
       try { out = JSON.parse(res.stdout.trim().split('\n').pop()); } catch { /* handled below */ }
       const ids = set.scenarios.map((s) => s.id).sort().join('|');
       const got = (out?.cases ?? []).map((c) => c.id).sort().join('|');
       if (!out || got !== ids) {
         sets.push({ id, digest, verdict: NOT_EARNED, summary: `evaluator for ${id} did not report every scenario exactly once`, passed: 0, total: set.scenarios.length,
-          stderr: res.stderr.slice(0, 2000) });
+          ...stderr });
         continue;
       }
       const passed = out.cases.filter((c) => c.passed === true).length;
       sets.push({ id, digest, verdict: passed === set.scenarios.length ? PASS : FAIL, summary: `${passed}/${set.scenarios.length}`, passed,
-        total: set.scenarios.length, cases: out.cases });
+        total: set.scenarios.length, cases: out.cases, ...stderr });
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }

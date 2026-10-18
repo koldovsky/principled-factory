@@ -131,12 +131,53 @@ Not done, and stated in docs/trust.md: the holdout evaluator, network egress, th
 `npm test` (146 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22, Linux and a real Claude Code builder
 typing the confined commands are not verified yet.
 
+## 2026-10-18 · Confining the holdout evaluator (Windows 11, Node 24.18)
+
+Observed, not assumed (Node 22's flag semantics come from its docs: one `--allow-fs-read` per path, a directory grants what is
+below it, entry points are readable without a grant since 22.17):
+
+- The slug evaluator ran under `node --permission --allow-fs-read=<its directory> --allow-fs-read=<workspace>
+  --no-experimental-sqlite`, started in an empty scratch directory, and reported all eight scenarios. A candidate imported by it
+  was denied reading the holdouts, a listing of the control directory, the home directory and the scratch directory, and writing
+  the workspace, the scratch directory, the run directory and the temp directory. A junction, a child process and a worker were
+  denied, and `node:sqlite` was absent. `fs.realpath` of an outside path still answered (path information only). No descriptor
+  beyond stdin, stdout and stderr was open; that matters because the model does not check descriptors that are already open.
+- The evaluator also loaded with no grant for its own file (Node 24 reads entry points implicitly); its directory is granted
+  anyway, so evaluators can import helpers. A `.js` evaluator in a control directory without `package.json` ran too.
+- **The candidate still shares the evaluator's process.** A wrong `slug()` that patched `console.log` made the confined evaluator
+  report 8 of 8 passed. Confinement stops it reading and writing files, not rewriting the report. The threat model had credited
+  the holdouts, and the CI re-run of the deployment contract, against a forged test report; both run the same code, so the
+  forging code can rewrite their results too. The table now says so, and the deployment contract asks for the candidate in a
+  process of its own.
+- Unconfined, the same candidate read the scenarios in full, wrote in the workspace (which the next attempt starts from) and
+  kept every input it was given in the run directory.
+
+Built:
+
+- `confineEvaluator` in `src/confine.mjs`. The holdout gate uses it whenever the profile is confined, so the unsafe switch
+  `confinement` turns it off along with the rest. The workspace, the evaluator and the scratch directory are used by real path.
+  The evaluator must be a file under `control/evaluators`, or the set is NOT-EARNED: its directory is granted to the candidate,
+  so it must never be the control directory or the holdouts.
+- The gate keeps the evaluator's stderr (its first 2,000 characters) as evidence whatever the verdict, so a denial inside the
+  evaluator is visible to people. It never reaches the builder, whose feedback stays counts only.
+- The map tells the builder that hidden scenarios run its code with read access to the workspace and no writes, so an honest
+  product that writes files is not left guessing why every hidden scenario fails.
+- The snooping candidate reports on stderr where it may not write its log, and inside the evaluator tries to keep each input
+  it is given in the run directory, outside the workspace.
+- Tests: confined, the candidate's read inside the evaluator gets `ERR_ACCESS_DENIED`, as do its log write in the workspace and
+  every write outside it, and the honest slug passes the holdouts; with `confinement` switched off, it reads the scenarios in full
+  and keeps the inputs. Unit tests pin the evaluator's flags and refuse an evaluator outside `control/evaluators`.
+
+Not done, and stated in docs/trust.md: network egress, the reports of the processes the agent's code runs in (its test report
+and the evaluator's result), other profiles, and a `doctor` probe of the evaluator's flags (the end-to-end tests cover them).
+`npm test` (150 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22 and Linux are not verified yet.
+
 ## Next
 
-1. Confine the holdout evaluator (read the workspace and its evaluator, write nothing): under the Node profile it is now the one
-   place where the agent's code runs unconfined.
-2. Run one honest Claude Code task to check that a real builder types the confined commands and that Claude Code's allow rules
+1. Run one honest Claude Code task to check that a real builder types the confined commands and that Claude Code's allow rules
    match them.
+2. Run the candidate in a process of its own, driven by the evaluator over a pipe, so that hostile code cannot rewrite the
+   holdout result.
 3. Validate the generic-exit profile on a non-Node repository.
 4. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
    approvals.

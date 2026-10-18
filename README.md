@@ -10,9 +10,10 @@ cites the proof.
   the attack then succeeds.
 - **The status is honest:** 23 principles are *enforced* and 12 are *partial*, each with its limits stated in
   [docs/principles.json](docs/principles.json). The biggest limit applies to all of them: isolation is policy-level, inside one OS
-  account. With the Node profile, code the agent runs through its allowed commands, and in the factory's own test runs, is
-  confined to the workspace by Node's permission model; its network access, the holdout evaluator and other profiles are not.
-  [docs/trust.md](docs/trust.md) says what that means and what a deployment must add.
+  account. With the Node profile, code the agent runs through its allowed commands, in the factory's own test runs and inside the
+  holdout evaluator (read-only there) is confined to the workspace by Node's permission model; its network access, the reports of
+  the processes it runs in and other profiles are not. [docs/trust.md](docs/trust.md) says what that means and what a deployment
+  must add.
 - **Validated with real Claude Code** on 18 October 2026: an honest task was accepted end to end for about $0.04 a run, and a
   sandbox probe through the production adapter was refused at every forbidden step. See [Validation](#validation).
 - Node.js 22.17+, no runtime dependencies, Windows and Linux.
@@ -88,10 +89,12 @@ the `&` rule, rename handling); the third honest run used the final code. Total 
 
 The factory stops at a reviewed local branch. It has no scheduler, containers, signed attestations, canaries or production
 deployment. Allowlisted commands run code the agent wrote, as your OS user, and the policy hook cannot see what that code does.
-With the Node profile those commands run under Node's permission model, so the code can read and write only the workspace and
-cannot start processes. It can still use the network and forge its own test report, the holdout evaluator runs it unconfined, and
-other profiles are not confined. Treat local runs as a strong harness against mistaken or overfitting agents, not as a sandbox
-against a hostile one. [docs/trust.md](docs/trust.md) gives the threat model and the deployment contract for unattended use.
+With the Node profile those commands, and the holdout evaluator that imports the candidate, run under Node's permission model, so
+the code can read and write only the workspace (inside the evaluator, only read it) and cannot start processes. It can still use
+the network, including to send out the hidden inputs the evaluator hands it, and forge the reports of the processes it runs in:
+its own test report and the evaluator's result. Other profiles are not confined. Treat local runs as a strong harness against
+mistaken or overfitting agents, not as a sandbox against a hostile one. [docs/trust.md](docs/trust.md) gives the threat model and
+the deployment contract for unattended use.
 
 ## Layout
 

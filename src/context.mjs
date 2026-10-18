@@ -22,7 +22,8 @@ export function buildMap({ config, task, plan, profile }) {
     '',
     '## How your work is checked',
     `- Visible tests you can run: ${[...task.visibleTests.failToPass, ...task.visibleTests.passToPass].join(', ') || 'none'}.`,
-    task.holdouts.length ? '- Hidden acceptance scenarios also run after you finish. You will only learn how many passed, never which.' : '',
+    task.holdouts.length ? `- Hidden acceptance scenarios also run after you finish${profile.confined ? ', with your code able to read this directory but not write it' : ''}.`
+      + ' You will only learn how many passed, never which.' : '',
     '- Protected files (tests, factory files) cannot be changed; edits to them are refused.',
     '',
     '## Allowed commands',

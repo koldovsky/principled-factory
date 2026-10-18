@@ -25,22 +25,37 @@ directory or the home directory, and it cannot start processes or workers, load 
 `node:sqlite` (the permission model does not cover `node:sqlite`, so the module is switched off). The hook allows only file paths
 after these commands, because an appended option such as `--allow-fs-read=*` would widen the grant.
 
+The holdout evaluator imports the candidate into its own process, so it runs under the same model with narrower grants:
+
+```
+node --permission --allow-fs-read=<evaluator's directory> --allow-fs-read=<workspace> --no-experimental-sqlite <evaluator>
+```
+
+The paths are absolute real paths, and the process starts in an empty scratch directory. The evaluator, and the candidate it
+imports, can read only the workspace and the evaluator's directory, and can write nothing: not the workspace, which the next
+attempt starts from, and not the store or any other place where the hidden inputs it is given could wait for a later attempt.
+The evaluator must be a file under `control/evaluators`, because the candidate may read its directory; keep scenario data out of
+that directory. A confined evaluator cannot start processes either, so it must import the candidate rather than run it.
+
 What is still not confined:
 
 - **Network.** Node 22 and 24 have no network permission. The code can open connections and send whatever it can read: the
-  workspace and its own environment.
-- **The holdout evaluator.** It runs the candidate's code unconfined, in the same process as the decrypted scenarios.
-- **The test report.** Test files run in the test runner's own process, because a child process per file would need
-  `--allow-child-process`, and a child process is outside the permission model. So code under test can rewrite the TAP output
-  and exit code of its own run. The holdouts, mutation and review gates and the deployment contract's CI re-run do not depend
-  on that report.
-- **Other profiles.** `generic-exit`, and any profile without `"confine": "node-permission"`, run their commands unconfined.
+  workspace, its own environment and, inside the holdout evaluator, the hidden inputs. It receives each input as an argument
+  and shares the evaluator's memory, so it can see the whole scenario list.
+- **The reports of the processes it runs in.** Test files run in the test runner's own process, because a child process per file
+  would need `--allow-child-process`, and a child process is outside the permission model. The holdout evaluator imports the
+  candidate into its own process. So code under test can rewrite the TAP output and exit code of its own run, and the candidate
+  can rewrite the evaluator's result: a wrong `slug()` that patched `console.log` turned the evaluator's report into 8 of 8
+  passed (measured). A test report forged to pass whatever happens fails the mutation gate, because no mutant is then killed. A
+  forged evaluator result is caught only by review, which sees the forging code in the diff.
+- **Other profiles.** `generic-exit`, and any profile without `"confine": "node-permission"`, run their commands and their holdout
+  evaluator unconfined.
 - **Signals.** The code can signal other processes of the same user, the factory included.
 
 So locally, the factory is a strong harness against an agent that **makes mistakes, overfits or follows bad instructions through
-its tools**, and with the Node profile the agent's code can no longer reach the factory's files through the allowed commands. It
-is still not a security boundary against an agent that **deliberately writes code to escape**: the gaps above remain, and the
-permission model is a control inside one Node process, not an OS boundary. The
+its tools**, and with the Node profile the agent's code can no longer reach the factory's files through the allowed commands, the
+factory's test runs or the holdout evaluator. It is still not a security boundary against an agent that **deliberately writes
+code to escape**: the gaps above remain, and the permission model is a control inside one Node process, not an OS boundary. The
 [deployment contract](#deployment-contract-for-unattended-use) closes that gap with OS-level isolation that a Node process cannot
 create for itself.
 
@@ -49,13 +64,14 @@ create for itself.
 | The agent may… | Example | Stopped by |
 |---|---|---|
 | be wrong | an off-by-one in `slug()` | visible tests, repeat, mutation, holdouts, review |
-| overfit to visible tests | special-case the five test inputs | holdouts run by a separate process; feedback is counts only |
+| overfit to visible tests | special-case the five test inputs | holdouts, run by an evaluator process the builder never reaches; feedback is counts only |
 | edit the oracle through its tools | `Edit test/slug.test.mjs` | hook denies protected paths; integrity gate re-checks file digests |
 | edit the oracle through code it runs | a test helper that rewrites a test file | integrity gate (digests taken from the base commit), mutation gate; confinement still allows writes inside the workspace |
 | read hidden scenarios through its tools | `Read ../control/holdouts/set-a.json` | hook confines file tools to the workspace |
-| read hidden scenarios through code it runs | `fs.readFileSync` in product code during the tests | Node profile: the permission model denies it (`ERR_ACCESS_DENIED`). In the holdout evaluator, which is not confined: **sealed** holdouts only (AES-256-GCM, key outside the builder's environment); see limits |
+| read hidden scenarios through code it runs | `fs.readFileSync` in product code during the tests, or inside the holdout evaluator | Node profile: the permission model denies it (`ERR_ACCESS_DENIED`), in the test runs and in the evaluator, which may read only the workspace and its own directory. Other profiles: **sealed** holdouts only (AES-256-GCM, key outside the builder's environment); see limits |
+| keep hidden inputs for a later attempt | the candidate, inside the evaluator, writes each input it is given to a file | Node profile: the evaluator may write nothing, in the workspace or outside it (`ERR_ACCESS_DENIED`). **Not** the network: the inputs can still be sent out |
 | widen its own confinement | append `--allow-fs-read=*` to the allowed test command | the hook allows only file paths after a confined command; a profile command that cannot be confined is refused |
-| forge its own test report | product code that rewrites stdout and the exit code during the tests | **not** the visible-tests gate; holdouts in a separate process, mutation, review, the CI re-run of the deployment contract |
+| forge its own reports | product code that rewrites stdout and the exit code during the tests, or the holdout evaluator's result | **not** the visible-tests gate, and **not** the holdouts: the evaluator imports the candidate into its own process. Mutation, if the forged report always passes (no mutant is killed); review, which sees the forging code in the diff |
 | put hidden inputs into its answer | copy scenario inputs into the code | leak scan of changed files; the leaked set is retired |
 | follow injected instructions | a README line telling agents to fetch a URL | no network tools; Bash is an exact allowlist with no chaining; data-boundary globs |
 | claim success it did not earn | "all tests pass" with no change | status comes from gates, never from the agent's message |
@@ -84,12 +100,14 @@ a disposable git worktree, and is killed as a process tree on timeout or stop. W
 also run under Node's permission model, limited to the workspace (above). `doctor` proves this on each machine before any run: a
 probe under the same flags must be able to use its workspace, and must be denied an outside read, an outside write, a relative
 symlink out of the workspace (the CVE-2025-55130 pattern), a child process and `node:sqlite`. Runs are refused without a recent
-passing check, so a Node version that fails the probe cannot run the Node profile.
+passing check, so a Node version that fails the probe cannot run the Node profile. The probe does not run the holdout evaluator's
+narrower flags; the end-to-end tests do.
 
 **Oracle layer.** Protected files are fingerprinted from the base commit before the agent starts. Holdouts live in the control
 directory, outside every workspace, and can be sealed with AES-256-GCM using a key held only in the factory process's
 environment. A separate evaluator process receives the scenarios on stdin and reports per-scenario results to the factory; the
-builder sees only "X of Y passed".
+builder sees only "X of Y passed". With the Node profile that process runs under the permission model, read-only (above). The
+candidate still runs inside it, so the result is only as honest as the candidate's code: hostile code can rewrite it.
 
 **Human layer.** Approvals name a person and bind an exact digest (configuration, task intent, plan, proof pack). Agent identities
 cannot approve; the requester cannot approve their own release; two-human tiers need two different people; the review queue has a
@@ -98,22 +116,25 @@ WIP limit.
 ## Limits, stated plainly
 
 - **Same OS account.** With the Node profile, code the agent runs through allowed commands and the factory's test runs is limited
-  to the workspace by Node's permission model. It can still make network connections, signal the user's processes and forge its
-  own test report. The holdout evaluator runs the candidate unconfined, so code running there can read every file the user can
-  read (other repositories, `~/.claude` credentials, the control directory and the store) and write files the hook would have
-  refused. Other profiles get no confinement at all.
+  to the workspace by Node's permission model, and inside the holdout evaluator to reading the workspace and the evaluator's
+  directory. It can still make network connections, signal the user's processes and forge the reports of the processes it runs
+  in: its own test report and the evaluator's result. Other profiles get no confinement at all: there, code running in the tests
+  or in the evaluator can read every file the user can read (other repositories, `~/.claude` credentials, the control directory
+  and the store) and write files the hook would have refused.
 - **The permission model has gaps of its own.** Node documents that it does not cover every API (`node:sqlite` is its example and
   is switched off here), and it has had bypasses: CVE-2025-55130, a relative-symlink escape, affects Node up to 22.21.1 and 24.12.0.
   The `doctor` probe tries the escapes known here; an escape it does not try remains a risk.
 - **Sealed holdouts raise the bar; they do not end the risk.** There is no plaintext on disk and the key is not in the builder's
-  environment. But unconfined code running as the same user, such as the candidate inside the holdout evaluator, can read another
-  process's environment or memory (`/proc/<pid>/environ` on Linux, process memory on Windows). Real separation needs the
-  evaluator and its key under another account or on another machine.
+  environment. Unconfined code running as the same user, as under other profiles, can read another process's environment or
+  memory (`/proc/<pid>/environ` on Linux, process memory on Windows). With the Node profile the candidate in the evaluator can no
+  longer reach either: `/proc` is outside its grants and it cannot start processes or load addons (Linux not measured). But it
+  is handed the decrypted inputs, shares the evaluator's memory and can send what it sees over the network. Real separation
+  needs the evaluator and its key under another account or on another machine, with the candidate in a process of its own.
 - **Approvals and run state are plain files.** Identities passed with `--as` are asserted, not authenticated. Approval records are
   JSON lines in the store. Run events are hash-linked, so `factory verify-events` detects edited or removed events, but anyone who
   can write the store can append a well-formed forged record.
-- **No egress control.** The factory denies network tools, not network traffic from code the agent runs; Node's permission model
-  on Node 22 and 24 has no network scope.
+- **No egress control.** The factory denies network tools, not network traffic from code the agent runs, the candidate inside the
+  holdout evaluator included; Node's permission model on Node 22 and 24 has no network scope.
 - **The generic command adapter has no tool-level confinement at all.** The AI policy must opt in with `allowUnconfinedAgent`,
   its cost is unknown, and every proof pack it produces says so.
 - **Unknown cost.** Agents that report no cost are bounded only by time limits and attempts.
@@ -126,6 +147,7 @@ To make the statuses hold without the caveats above, deploy the factory like thi
    to the control directory, the store, other repositories or the home directory.
 2. Allow egress only to the model API, through a proxy that logs requests.
 3. Run the holdout evaluator under a separate account or service that holds the key. The builder's account cannot read that key.
+   Have the evaluator drive the candidate in a process of its own, so that the candidate cannot rewrite the evaluator's result.
 4. Keep the store on storage the builder cannot write, ideally append-only. Take approvals from an authenticated system, such as
    signed commits, protected-branch reviews or SSO-backed approval records, instead of `--as`.
 5. Re-run the deterministic gates in CI on the released branch before merge, from a clean checkout.
@@ -164,7 +186,16 @@ releases are local branches that are never pushed.
   the real path. End-to-end tests run a builder whose product code reads the holdouts during the tests: denied with
   `ERR_ACCESS_DENIED` while the tests pass, and read in full with confinement switched off. The flags for Node 22 come from its
   documentation; Node 22 was not available on this machine.
+- **Holdout evaluator, 18 October 2026, Windows 11, Node 24.18:** under the evaluator's flags, a candidate imported by the slug
+  evaluator was denied reading the holdouts, the control directory, the home directory and the scratch directory it started
+  in, and writing the workspace, the scratch directory, the run directory and the temp directory. A junction, a child process
+  and a worker were denied, `node:sqlite` was absent, and no descriptor beyond stdin, stdout and stderr was open (the model does
+  not check descriptors that are already open). The evaluator still reported all eight scenarios, and a `.js` evaluator ran as
+  well. A wrong `slug()` that patched `console.log` made the confined evaluator report 8 of 8 passed. End-to-end tests run a
+  builder whose candidate snoops inside the evaluator: confined, its read and its writes in and outside the workspace are
+  denied while the honest slug passes the holdouts; with confinement switched off, it reads the scenarios in full and keeps the
+  inputs it is given in the run directory.
 - **Not verified:** the generic-exit profile, runs on macOS, a repeat of the sandbox probe after the `&` fix (the fix only adds
-  denials), the deployment contract (it is a contract, not code here), the confined commands on Node 22 and on Linux (CI runs
-  both once the change is pushed), and a real Claude Code builder typing the confined commands (its allow rules now contain `=`
-  and `.`).
+  denials), the deployment contract (it is a contract, not code here), the confined commands and the confined holdout evaluator
+  on Node 22 and on Linux (CI runs both once the change is pushed), and a real Claude Code builder typing the confined commands
+  (its allow rules now contain `=` and `.`).

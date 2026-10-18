@@ -197,8 +197,8 @@ test('[P5.2][mechanism-off] without the policy decision, the same holdout read s
 });
 
 // The snoop candidate logs each read attempt to snoop.log in the workspace; 'tests' marks imports by a test run.
-const testRunReads = (run) => fs.readFileSync(path.join(run.ws, 'snoop.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-  .filter((r) => r.where === 'tests');
+const snoopLog = (run) => fs.readFileSync(path.join(run.ws, 'snoop.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const testRunReads = (run) => snoopLog(run).filter((r) => r.where === 'tests');
 
 test('[P4.2][P5.2] product code that reads the holdouts during the visible tests gets ERR_ACCESS_DENIED, and the tests still run', async () => {
   const { ex, run } = await go('snoop-holdouts');
@@ -216,6 +216,36 @@ test('[P4.2][P5.2][mechanism-off] without confinement, the same product code rea
     assert.equal(gate(run, 'visible-tests', 0).verdict, 'PASS');
     const length = fs.readFileSync(path.join(ex.control, 'holdouts', 'set-a.json'), 'utf8').length;
     assert.ok(testRunReads(run).some((r) => r.read === length), 'the hidden scenarios were read in full');
+  } finally { ex.cleanup(); }
+});
+
+// Inside the holdout evaluator the snoop candidate also tries to keep each input it is given in the run directory, outside
+// the workspace. Where it may not write, it reports on stderr, which the gate keeps as evidence.
+const stashFile = (store, run) => path.join(runDir(store, run.id), 'stash.jsonl');
+
+test('[P4.2][P5.2] inside the holdout evaluator the candidate cannot read the hidden scenarios or write anything, and the honest slug still passes', async () => {
+  const { ex, store, run } = await go('snoop-holdouts');
+  try {
+    const hold = gate(run, 'holdouts', 0);
+    assert.equal(hold.verdict, 'PASS');
+    const set = hold.evidence.sets[0];
+    const stderr = (set.stderr ?? '').split('\n');
+    assert.equal(stderr.find((l) => l.startsWith('./snoop.log ')), './snoop.log ERR_ACCESS_DENIED: {"where":"holdout evaluator","error":"ERR_ACCESS_DENIED"}',
+      'the read was denied, and so was the log write in the workspace');
+    assert.equal(stderr.filter((l) => l.startsWith('../stash.jsonl ERR_ACCESS_DENIED: ')).length, set.total, 'every write outside the workspace was denied');
+    assert.ok(!snoopLog(run).some((r) => r.where === 'holdout evaluator'));
+    assert.equal(fs.existsSync(stashFile(store, run)), false);
+  } finally { ex.cleanup(); }
+});
+
+test('[P4.2][P5.2][mechanism-off] without confinement, the candidate inside the holdout evaluator reads the hidden scenarios and keeps their inputs', async () => {
+  const { ex, store, run } = await go('snoop-holdouts', { unsafe: ['confinement'] });
+  try {
+    assert.equal(gate(run, 'holdouts', 0).verdict, 'PASS');
+    const set = fs.readFileSync(path.join(ex.control, 'holdouts', 'set-a.json'), 'utf8');
+    assert.ok(snoopLog(run).some((r) => r.where === 'holdout evaluator' && r.read === set.length), 'read in full, and logged in the workspace');
+    const kept = fs.readFileSync(stashFile(store, run), 'utf8');
+    for (const s of JSON.parse(set).scenarios.filter((x) => typeof x.input === 'string')) assert.ok(kept.includes(JSON.stringify(s.input)), s.id);
   } finally { ex.cleanup(); }
 });
 

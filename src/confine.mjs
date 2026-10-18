@@ -1,8 +1,9 @@
 // Confinement (principles 4.2, 5.2): commands that run code the agent wrote (tests, observe commands) run under Node's
-// permission model, limited to the workspace. Measured on Node 24.18 (BUILDLOG.md): reads and writes outside the
-// workspace, links, child processes, workers, addons, WASI and the inspector are denied. node:sqlite bypasses the model,
-// so it is switched off. Test files run in the test runner's own process: a child per file would need
-// --allow-child-process, and a child process is outside the model. Network access is not restricted.
+// permission model, limited to the workspace, and the holdout evaluator, which imports the candidate, may only read.
+// Measured on Node 24.18 (BUILDLOG.md): reads and writes outside the grants, links, child processes, workers, addons, WASI
+// and the inspector are denied. node:sqlite bypasses the model, so it is switched off. Test files run in the test runner's
+// own process: a child per file would need --allow-child-process, and a child process is outside the model. Network access
+// is not restricted.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,6 +26,15 @@ export function confineArgv(argv) {
 }
 
 export const confineCommand = (command) => confineArgv(command.trim().split(/\s+/)).join(' ');
+
+// The holdout evaluator imports the candidate into its own process, next to the hidden scenarios (src/gates/holdout.mjs).
+// It may read its own directory and the workspace, and write nothing: not the workspace, which the next attempt starts
+// from, and not the store. It starts in an empty scratch directory, so the grants are absolute real paths.
+export function confineEvaluator({ evaluator, ws }) {
+  const entry = fs.realpathSync.native(evaluator);
+  return ['node', '--permission', `--allow-fs-read=${path.dirname(entry)}`, `--allow-fs-read=${fs.realpathSync.native(ws)}`,
+    '--no-experimental-sqlite', entry];
+}
 
 // A profile that declares confinement gets every command confined: the test command, the builder's allowlist and the
 // observe commands. A command it cannot confine is refused rather than run unconfined.

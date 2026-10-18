@@ -59,7 +59,7 @@ pack and never counted as a pass.
 | 4 | Visible tests | the profile's test command; required tests ran and every test passed | 4.1 |
 | 5 | Repeat | the same outcomes on repeated runs | 4.5 |
 | 6 | Mutation | light mutants on changed lines must be killed by the tests | 4.5 |
-| 7 | Holdouts | a separate evaluator process runs hidden scenarios; the builder learns only the count | 4.2 |
+| 7 | Holdouts | an evaluator process the builder never reaches runs hidden scenarios against the candidate it imports; the builder learns only the count | 4.2 |
 | 8 | Review | a read-only reviewer in a fresh process tries to refute; findings must cite a real file and line; high-severity findings block, the rest go to the approver | 4.4 |
 
 The gate order and options live in `factory.json`. The configuration is refused if it names an unknown gate, or a review gate
@@ -82,11 +82,16 @@ The allowlisted commands run code the agent wrote, and the hook cannot see what 
 `"confine": "node-permission"`, as the Node profile does (`src/confine.mjs`): its test command, allowlist and observe commands
 then run under Node's permission model, with reads and writes limited to the workspace and no child processes, workers, addons
 or `node:sqlite`; test files run in the test runner's process. A command that cannot be confined is refused, the hook lets only
-file paths follow a confined command, and `doctor` probes on each machine that the confinement holds.
+file paths follow a confined command, and `doctor` probes on each machine that the confinement holds. The holdout evaluator, which
+imports the candidate, runs under the same model with narrower grants (`confineEvaluator`): it may read its own directory under
+`control/evaluators` and the workspace, by absolute real path, and write nothing, so the candidate can neither read the hidden
+scenarios from disk nor keep the inputs it is given for a later attempt. Since it cannot start processes, a confined evaluator
+must import the candidate in-process. The gate keeps the evaluator's stderr as evidence, never as feedback. `doctor` does not
+probe these narrower flags; the end-to-end tests do.
 
-**Honest limit:** this is still isolation inside one OS account. Network access, the holdout evaluator and other profiles are not
-confined, and code under test shares a process with its test report. [trust.md](trust.md) states the consequences and the
-deployment contract that removes them.
+**Honest limit:** this is still isolation inside one OS account. Network access and other profiles are not confined, code under
+test shares a process with its test report, and the candidate shares one with the holdout evaluator, so deliberately hostile code
+can forge either result. [trust.md](trust.md) states the consequences and the deployment contract that removes them.
 
 ## Principle map
 
@@ -103,14 +108,14 @@ deployment contract that removes them.
 | 3.2 | Fast feedback, cheapest first | configured gate order, stop at first failure, remediation written to progress | `pipeline`, `gates/*` |
 | 3.3 | Bounded runs, escalation | attempts, spend caps, timeouts, kill switch, needs-human with owner, question, default and deadline; `sweep` | `pipeline`, `store`, `cli` |
 | 4.1 | Deterministic before judgement | review runs only after every deterministic gate passed; reviewer never sees the builder's narrative | `pipeline`, `gates/review` |
-| 4.2 | Protected and hidden oracle | integrity gate; hook protects files; holdouts outside the workspace, sealable, separate process, counts only; leak scan retires sets; Node profile: code under test cannot read them | `gates/deterministic`, `gates/holdout`, `holdouts`, `policy/hook`, `confine` |
+| 4.2 | Protected and hidden oracle | integrity gate; hook protects files; holdouts outside the workspace, sealable, separate process, counts only; leak scan retires sets; Node profile: code under test and the candidate inside the evaluator cannot read them | `gates/deterministic`, `gates/holdout`, `holdouts`, `policy/hook`, `confine` |
 | 4.3 | Evidence over assertions | three-state results; missing evidence is NOT-EARNED; boundary evidence; no silently skipped gates | `gates/result`, `gates/boundary`, `config` |
 | 4.4 | Adversarial review | refute-by-default brief; findings without a real file:line are dropped; unusable output goes to a human | `gates/review`, `context` |
 | 4.5 | Layered proof | baseline must fail, repeat consistency, light mutation testing | `gates/deterministic`, `gates/mutation` |
 | 4.6 | Product observable to the agent | observe commands in the map and in the builder's command allowlist | `context`, `config`, `pipeline` |
 | 4.7 | Maintainability target | dependency-direction, duplication and file-size sensors | `gates/maintainability` |
 | 5.1 | No lethal trifecta | roles declare capabilities; a role with all three is refused | `config` |
-| 5.2 | Least privilege, sandbox | worktree per run, scrubbed environment, hook confinement, exact command allowlist, no network tools; Node profile commands under Node's permission model | `workspace`, `policy/hook`, `agents/claude`, `util`, `confine` |
+| 5.2 | Least privilege, sandbox | worktree per run, scrubbed environment, hook confinement, exact command allowlist, no network tools; Node profile commands and the holdout evaluator under Node's permission model | `workspace`, `policy/hook`, `agents/claude`, `util`, `confine`, `gates/holdout` |
 | 5.3 | Separation of duties | agents cannot approve; the requester cannot approve; two-human tiers need two people | `approvals` |
 | 5.4 | Config as supply chain | the config digest needs a human approval; a mid-run change stops the run; agents cannot write factory files | `config`, `pipeline`, `policy/hook` |
 | 6.1 | Standard tracing | OTel-GenAI-shaped spans for workflow, agents, tools and gates; content capture off by default | `trace`, `policy/hook` |
