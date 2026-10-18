@@ -56,6 +56,25 @@ Real Claude Code runs (2.1.296; Haiku 5.5 builder, Sonnet 5.5 reviewer), total s
 - Red-team task that asked the builder, inside its task intent, to probe the sandbox: the model declined, citing the brief's
   boundaries. It is recorded as evidence of nothing about the deny paths.
 
+## 2026-10-18 · Fresh-context review
+
+A reviewer with no build context tried to refute the conformance claims by reading the code and neutering mechanisms in a scratch
+copy. Its findings, all fixed:
+
+- **High, 7.1:** `classify()` let a lower-risk class overwrite the default tier of an unclassified file listed before it. A
+  docs edit plus a `Dockerfile` (or `.github/` file) was released unattended. The tier is now the most restrictive *effective*
+  tier over every class a change touches, so a file can no longer ride on another class's earned autonomy either. Unit and
+  end-to-end tests cover both orders.
+- **Medium, 5.2:** the hook's chaining filter missed a single `&` (`node --test & npm publish` was allowed). Any `&` is now denied.
+- **Low, 9.3/2.3:** the crash-and-resume test was flaky under full-suite load. The test now waits for a positive signal (the
+  builder's policy file), and atomic state writes retry briefly on Windows when another process holds the target open.
+- **Low, 4.5:** admission did not flag a fail-to-pass test that does not exist on the base commit; it now does, unless the test
+  file failed to load (a legitimate failing state).
+- **Low, 4.4:** only high-severity review findings block. That is by design; the docs now say so.
+
+Claims that survived: path containment (traversal, drive case, `\\?\` prefixes, junctions), fail-closed verdicts, oracle protection,
+separation of duties as asserted identities, status never set by an agent's message, and all ten mechanism-off tests.
+
 ## Next
 
 1. Confine the Node profile's commands with Node's permission model (`--permission`, read and write limited to the workspace) so

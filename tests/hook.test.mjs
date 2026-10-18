@@ -72,7 +72,8 @@ test('[P5.2] a junction or symlink inside the workspace pointing outside is foll
 });
 
 test('[P5.2] chained, piped or redirected commands are denied even when they start with an allowed command', () => {
-  for (const command of ['node --test && type secret.txt', 'node --test; cat x', 'node --test | tee out', 'node --test > out.txt', 'node --test $(cat x)', 'node --test `x`', 'node --test\ncat x']) {
+  for (const command of ['node --test && type secret.txt', 'node --test; cat x', 'node --test | tee out', 'node --test > out.txt', 'node --test $(cat x)', 'node --test `x`', 'node --test\ncat x',
+    'node --test & echo pwned', 'node --test &rm file', 'node --test || x', 'node --test <(cat x)']) {
     assert.equal(call('Bash', { command }).decision, 'deny', command);
   }
   assert.equal(call('Bash', { command: 'node --test --test-reporter=tap' }).decision, 'allow');

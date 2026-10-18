@@ -162,7 +162,7 @@ const COMMANDS = {
   async incident(args) {
     const store = openStore(dirs(args).store);
     const r = recordIncidentForRun({ store, runId: args._[0], by: need(args, 'as'), summary: need(args, 'summary') });
-    console.log(`incident ${r.incident.id} recorded; class ${r.incident.changeClass} demoted`);
+    console.log(`incident ${r.incident.id} recorded; demoted ${r.incident.changeClasses.join(', ')}`);
     return 0;
   },
   async report(args) {

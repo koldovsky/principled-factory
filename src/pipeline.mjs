@@ -16,7 +16,7 @@ import { checkMaintainability } from './gates/maintainability.mjs';
 import { runMutation } from './gates/mutation.mjs';
 import { FAIL, NOT_EARNED, PASS } from './gates/result.mjs';
 import { boundaryEvidence } from './gates/boundary.mjs';
-import { classify, effectiveTier } from './autonomy.mjs';
+import { decideTier } from './autonomy.mjs';
 import { buildProofPack, release } from './delivery.mjs';
 import { readTrace, span, traceFile } from './trace.mjs';
 import { FactoryError, matchesAny, nowIso, readJson, sha256, writeJsonAtomic } from './util.mjs';
@@ -296,9 +296,11 @@ function notVerifiedList(ctx) {
 
 function route(ctx, change) {
   const { run, store, config, task } = ctx;
-  const cls = classify(change.files, config.factory.autonomy);
-  const tier = skip(run, 'autonomy') ? { tier: 'auto', reason: 'UNSAFE: autonomy check skipped' } : effectiveTier(store, cls, config.factory.autonomy, config.policy);
-  run.changeClass = cls.name;
+  const decided = decideTier(store, change.files, config.factory.autonomy, config.policy);
+  const tier = skip(run, 'autonomy') ? { tier: 'auto', reason: 'UNSAFE: autonomy check skipped' } : decided;
+  const cls = { name: decided.classNames.join(', ') };
+  run.changeClass = decided.className;
+  run.changeClasses = decided.classNames;
   run.tier = tier.tier;
   const planFile = path.join(runDir(store, run.id), 'plan.md');
   const { markdown, digest } = buildProofPack({ run, task, attempt: run.attempts.at(-1), change, tier, cls,
@@ -307,12 +309,12 @@ function route(ctx, change) {
   run.proofDigest = digest;
   saveRun(store, run);
   if (tier.tier === 'auto') {
-    transition(store, run, 'accepted', { tier: tier.tier, changeClass: cls.name, proofDigest: digest });
+    transition(store, run, 'accepted', { tier: tier.tier, changeClass: decided.className, proofDigest: digest });
     if (!run.unsafe?.length) release({ store, runId: run.id, config, by: run.requestedBy, approvers: [] });
     return 'stop';
   }
   run.awaitingSince = nowIso();
-  transition(store, run, 'awaiting-release-approval', { tier: tier.tier, changeClass: cls.name, proofDigest: digest, reason: tier.reason });
+  transition(store, run, 'awaiting-release-approval', { tier: tier.tier, changeClass: decided.className, proofDigest: digest, reason: tier.reason });
   return 'stop';
 }
 

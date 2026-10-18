@@ -27,7 +27,7 @@ export function buildProofPack({ run, task, attempt, change, plan, tier, cls, no
     `# Proof pack · ${task.title}`,
     '',
     `Run \`${run.id}\` · task \`${task.id}\` (digest ${run.taskDigest.slice(0, 12)}) · attempt ${attempt.n} of ${run.maxAttempts}`,
-    `Requested by ${run.requestedBy} · risk class **${cls.name}** → approval tier **${tier.tier}** (${tier.reason})`,
+    `Requested by ${run.requestedBy} · risk classes **${cls.name}** → approval tier **${tier.tier}** (${tier.reason})`,
     '',
     '## Requirements and evidence',
     '| Requirement | Description | Evidence |', '|---|---|---|', ...reqLines,
@@ -76,7 +76,7 @@ export function release({ store, runId, config, by, approvers }) {
   removeWorkspace(run.targetDir, ws);
   run.release = { branch, commit, rollbackTarget: run.base, by, approvers, at: nowIso(), pushed: false };
   transition(store, run, 'released', { branch, commit, rollbackTarget: run.base });
-  recordRelease(store, run.changeClass, config.factory.autonomy.promoteAfter ?? 5);
+  for (const c of run.changeClasses ?? [run.changeClass]) recordRelease(store, c, config.factory.autonomy.promoteAfter ?? 5);
   return run;
 }
 
@@ -84,9 +84,10 @@ export function release({ store, runId, config, by, approvers }) {
 export function recordIncidentForRun({ store, runId, by, summary }) {
   const run = loadRun(store, runId);
   if (run.state !== 'released') throw new FactoryError('STATE', `run ${runId} was not released`);
-  const incident = { id: newId('inc'), runId, changeClass: run.changeClass, by, summary, at: nowIso() };
+  const changeClasses = run.changeClasses ?? [run.changeClass];
+  const incident = { id: newId('inc'), runId, changeClass: run.changeClass, changeClasses, by, summary, at: nowIso() };
   appendJsonLine(store.incidents, incident);
   appendEvent(store, runId, 'incident', incident);
-  const autonomy = recordIncident(store, run.changeClass);
+  const autonomy = Object.fromEntries(changeClasses.map((c) => [c, recordIncident(store, c)]));
   return { incident, autonomy };
 }

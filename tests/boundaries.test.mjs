@@ -334,6 +334,15 @@ test('[P7.1][P8.3] a docs-only change in an unattended class is released automat
   } finally { ex.cleanup(); }
 });
 
+test('[P7.1] a docs change that slips in an unclassified file is not released unattended', async () => {
+  const { ex, run } = await go('docs-plus-infra', { task: 'readme', setup: slugAlreadyShipped });
+  try {
+    assert.equal(run.state, 'awaiting-release-approval');
+    assert.equal(run.tier, 'one-human');
+    assert.deepEqual([...run.changeClasses].sort(), ['default', 'docs']);
+  } finally { ex.cleanup(); }
+});
+
 test('[P7.1] code changes wait for a human; an incident demotes the class to two approvers', async () => {
   const { ex, store, run } = await go('honest');
   try {
@@ -401,10 +410,13 @@ test('[P2.3] a run whose process dies mid-build keeps its stage; resume needs ex
   try {
     const child = spawn(process.execPath, [path.join(ROOT, 'bin', 'factory.mjs'), 'run', 'slug', '--control', ex.control, '--target', ex.target,
       '--store', ex.store, '--as', 'alice', '--behaviour', 'slow'], { stdio: 'ignore' });
+    // Positive signal: the builder's policy file is written just before the agent starts (the scripted builder then waits).
     let run;
-    for (let i = 0; i < 300 && !(run?.state === 'building' && run.attempt === 1); i++) { await sleep(50); run = listRuns(store)[0]; }
-    assert.equal(run?.state, 'building', 'the builder is running');
-    await sleep(300);
+    for (let i = 0; i < 1200 && !run; i++) {
+      await sleep(50);
+      try { const r = listRuns(store)[0]; if (r && fs.existsSync(path.join(runDir(store, r.id), 'policy-builder.json'))) run = r; } catch { /* mid-write */ }
+    }
+    assert.ok(run, 'the builder started');
     child.kill('SIGKILL');
     await once(child, 'exit');
     assert.equal(loadRun(store, run.id).state, 'building', 'the stored stage survives the crash');

@@ -60,7 +60,7 @@ pack and never counted as a pass.
 | 5 | Repeat | the same outcomes on repeated runs | 4.5 |
 | 6 | Mutation | light mutants on changed lines must be killed by the tests | 4.5 |
 | 7 | Holdouts | a separate evaluator process runs hidden scenarios; the builder learns only the count | 4.2 |
-| 8 | Review | a read-only reviewer in a fresh process tries to refute; findings must cite a real file and line | 4.4 |
+| 8 | Review | a read-only reviewer in a fresh process tries to refute; findings must cite a real file and line; high-severity findings block, the rest go to the approver | 4.4 |
 
 The gate order and options live in `factory.json`. The configuration is refused if it names an unknown gate, or a review gate
 without a reviewer role, because either would skip verification silently.
@@ -74,7 +74,7 @@ without a reviewer role, because either would skip verification silently.
 | `command` | any CLI that reads a brief on stdin. **No tool-level confinement:** the AI policy must set `allowUnconfinedAgent`, and the proof pack says so | unknown |
 
 The policy hook confines file tools to the workspace, protects task-protected files and `.factory/`, applies data-boundary globs,
-allows only exact allowlisted commands (no chaining, pipes, redirects or substitution), denies network tools to roles without
+allows only exact allowlisted commands (no `&`, `|`, `;`, backticks, redirects, `$(` or line breaks), denies network tools to roles without
 external communication, and denies everything while the kill switch is engaged. It fails closed on any error and writes each
 decision to the trace.
 
@@ -110,7 +110,7 @@ hook cannot see what that code does. [trust.md](trust.md) states the consequence
 | 6.2 | Traceability, provenance | requirement-to-evidence table, digests and versions in the proof pack, `Assisted-by` trailer | `delivery`, `store` |
 | 6.3 | Cost per accepted change | cost per role and run, failed spend counted, per accepted change | `pipeline`, `metrics` |
 | 6.4 | Outcome metrics, visible | report and static dashboard lead with outcomes and stability | `metrics`, `dashboard` |
-| 7.1 | Earned autonomy | change classes → tiers; promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy` |
+| 7.1 | Earned autonomy | change classes → tiers; the most restrictive effective tier over every class touched decides (unclassified files keep the default); promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy` |
 | 7.2 | Reversible delivery | local branch, never pushed; rollback target; incident intake | `delivery` |
 | 7.3 | Fix delivery first | `doctor` checks git, clean tree, CI config, tools, deterministic tests; runs need a recent pass | `doctor` |
 | 8.1 | Protect review capacity | WIP limit on waiting approvals; diff budget; «not verified» list in the proof pack | `approvals`, `gates/deterministic`, `pipeline` |

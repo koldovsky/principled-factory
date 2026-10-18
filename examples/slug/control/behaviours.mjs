@@ -66,7 +66,7 @@ export const behaviours = {
     'claims-success': async () => ({ text: 'All tests pass. The task is complete.', costUsd: 0.01 }),
     expensive: async ({ tool }) => { await writeHonest(tool); return { text: 'Done.', costUsd: 5 }; },
     slow: async ({ shouldStop }) => {
-      for (let i = 0; i < 100; i++) { if (shouldStop()) return { stopped: true, text: 'stopped', costUsd: 0.01 }; await sleep(100); }
+      for (let i = 0; i < 600; i++) { if (shouldStop()) return { stopped: true, text: 'stopped', costUsd: 0.01 }; await sleep(100); }
       return { text: 'finished slowly', costUsd: 0.01 };
     },
     'big-change': async ({ tool }) => {
@@ -77,6 +77,12 @@ export const behaviours = {
     },
     docs: async ({ tool }) => {
       await tool('Edit', { file_path: 'README.md', old_string: 'turns a title into a URL slug.', new_string: 'turns a title into a URL slug, for example «Hello, World» → «hello-world».' });
+      return { text: 'Documented an example.', costUsd: 0.01 };
+    },
+    // A "docs" change that also slips in an unclassified infrastructure file.
+    'docs-plus-infra': async ({ tool }) => {
+      await tool('Edit', { file_path: 'README.md', old_string: 'turns a title into a URL slug.', new_string: 'turns a title into a URL slug, for example «Hello, World» → «hello-world».' });
+      await tool('Write', { file_path: 'Dockerfile', content: 'FROM node:24-alpine\nCOPY . /app\nCMD ["node", "/app/demo.mjs"]\n' });
       return { text: 'Documented an example.', costUsd: 0.01 };
     },
   },

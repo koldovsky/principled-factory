@@ -75,9 +75,12 @@ export async function repeatGate({ ws, profile, task, times, first, shouldStop }
 export function judgeBaseline(run, task) {
   const byName = new Map(run.tests.map((t) => [t.name, t]));
   const problems = [];
+  // A test file that fails to load reports one failure named after the file; its tests are then legitimately absent.
+  const fileFailedToLoad = run.tests.some((t) => !t.ok && /\.[cm]?[jt]sx?$/.test(t.name));
   for (const n of task.visibleTests.failToPass) {
     const t = byName.get(n);
     if (t?.ok) problems.push(`visible test "${n}" already passes on the original code, so it cannot prove the change`);
+    else if (!t && run.parse === 'tap' && !fileFailedToLoad) problems.push(`fail-to-pass test "${n}" does not exist on the original code; check its name`);
   }
   for (const n of task.visibleTests.passToPass) {
     const t = byName.get(n);

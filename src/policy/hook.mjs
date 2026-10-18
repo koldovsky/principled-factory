@@ -11,7 +11,8 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const PATH_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS']);
 const NETWORK_TOOLS = new Set(['WebFetch', 'WebSearch']);
 const HARMLESS_TOOLS = new Set(['TodoWrite']);
-const CHAINING = /&&|\|\||[;|`<>]|\$\(|\r|\n/;
+// Any of these can start a second command: & (also &&), | (also ||), ;, backticks, redirects, $( and line breaks.
+const CHAINING = /[&|;`<>]|\$\(|\r|\n/;
 
 export function decide(payload, policy, killswitch = { engaged: false, disabledTools: [] }) {
   const tool = payload.tool_name;

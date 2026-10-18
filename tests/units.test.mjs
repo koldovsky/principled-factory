@@ -11,7 +11,7 @@ import { openStore, createRun, loadRun, transition, acquireLock, saveRun } from 
 import { recordApproval, releaseApprovalStatus, assertReleaseApprover, isApproved } from '../src/approvals.mjs';
 import { sealSet, openSealed, findLeaks, loadSet, sealFile } from '../src/holdouts.mjs';
 import { judgeReview, validateFindings } from '../src/gates/review.mjs';
-import { classify, effectiveTier, recordRelease, recordIncident } from '../src/autonomy.mjs';
+import { classify, decideTier, effectiveTier, recordRelease, recordIncident } from '../src/autonomy.mjs';
 import { buildMap, writeContextPack } from '../src/context.mjs';
 import { registerExperiment, recordResult, assess, ALLOWED_CHANGES } from '../src/improve.mjs';
 import { evaluate, tagsOf } from '../src/conformance.mjs';
@@ -338,6 +338,38 @@ test('[P4.3][P5.2] boundary evidence: changed files need an allowed write or com
   const ok = boundaryEvidence({ spans: [s('Edit', 'allow'), s('Read', 'deny')], attempt: 1, changedFiles: 2 });
   assert.equal(ok.verdict, 'PASS');
   assert.deepEqual([ok.evidence.decided, ok.evidence.denied, ok.evidence.allowedChanges], [2, 1, 1]);
+});
+
+test('[P7.1] the most restrictive class touched decides, whatever the file order; unclassified files keep the default tier', () => {
+  const autonomy = loadConfig(copyControl()).factory.autonomy;
+  const store = openStore(path.join(tmp(), 'store'));
+  const policy = { unattendedClasses: ['docs'] };
+  for (const files of [['Dockerfile', 'README.md'], ['README.md', 'Dockerfile'], ['.github/workflows/deploy.yml', 'docs/a.md']]) {
+    const d = decideTier(store, files.map((file) => ({ file })), autonomy, policy);
+    assert.equal(d.tier, 'one-human', files.join(' + '));
+    assert.ok(d.classNames.includes('default') && d.classNames.length === 2);
+  }
+  assert.equal(classify([{ file: 'Dockerfile' }, { file: 'README.md' }], autonomy).name, 'default');
+  assert.equal(decideTier(store, [{ file: 'README.md' }], autonomy, policy).tier, 'auto');
+});
+
+test('[P7.1] a file cannot ride on another class\'s earned autonomy', () => {
+  const autonomy = loadConfig(copyControl()).factory.autonomy;
+  const store = openStore(path.join(tmp(), 'store'));
+  const policy = { unattendedClasses: ['docs', 'code'] };
+  for (let i = 0; i < autonomy.promoteAfter; i++) recordRelease(store, 'code');
+  assert.equal(decideTier(store, [{ file: 'slug.mjs' }], autonomy, policy).tier, 'auto', 'code earned a tier');
+  const mixed = decideTier(store, [{ file: 'slug.mjs' }, { file: 'Dockerfile' }], autonomy, policy);
+  assert.equal(mixed.tier, 'one-human');
+  assert.equal(mixed.className, 'default');
+});
+
+test('[P4.5] a fail-to-pass test that does not exist on the original code is refused at admission, unless its file failed to load', () => {
+  const task = { visibleTests: { failToPass: ['trim-case', 'no-such-test'], passToPass: ['exports-slug'] } };
+  const loaded = { parse: 'tap', tests: [{ name: 'trim-case', ok: false }, { name: 'exports-slug', ok: true }] };
+  assert.deepEqual(judgeBaseline(loaded, task), ['fail-to-pass test "no-such-test" does not exist on the original code; check its name']);
+  const brokenFile = { parse: 'tap', tests: [{ name: 'test\\slug.test.mjs', ok: false }, { name: 'exports-slug', ok: true }] };
+  assert.deepEqual(judgeBaseline(brokenFile, task), []);
 });
 
 test('[P1.2] the task schema requires non-functionals and acceptance mapping', () => {

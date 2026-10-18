@@ -4,14 +4,29 @@ import { matchesAny, readJson, writeJsonAtomic } from './util.mjs';
 const RANK = { auto: 0, 'one-human': 1, 'two-humans': 2 };
 const BY_RANK = ['auto', 'one-human', 'two-humans'];
 
-// The most restrictive class touched by the change decides.
-export function classify(files, autonomy) {
-  let chosen = { name: 'default', tier: autonomy.default, earnable: false };
+const defaultClass = (autonomy) => ({ name: 'default', tier: autonomy.default, earnable: false });
+
+// Every class a change touches; a file that matches no class carries the default tier.
+export function classesTouched(files, autonomy) {
+  const seen = new Map();
   for (const { file } of files) {
-    const match = autonomy.classes.find((c) => matchesAny(file, c.paths)) ?? { name: 'default', tier: autonomy.default, earnable: false };
-    if (RANK[match.tier] > RANK[chosen.tier] || chosen.name === 'default') chosen = match;
+    const c = autonomy.classes.find((k) => matchesAny(file, k.paths)) ?? defaultClass(autonomy);
+    if (!seen.has(c.name)) seen.set(c.name, c);
   }
-  return chosen;
+  return seen.size ? [...seen.values()] : [defaultClass(autonomy)];
+}
+
+// The most restrictive class touched by the change, by configured tier.
+export function classify(files, autonomy) {
+  return classesTouched(files, autonomy).reduce((a, b) => (RANK[b.tier] > RANK[a.tier] ? b : a));
+}
+
+// The approval tier of a change: the most restrictive *effective* tier over every class it touches. A file can never ride on a
+// lower-risk class listed after it, nor on another class's earned autonomy.
+export function decideTier(store, files, autonomy, policy) {
+  const tiers = classesTouched(files, autonomy).map((cls) => ({ cls, ...effectiveTier(store, cls, autonomy, policy) }));
+  const top = tiers.reduce((a, b) => (RANK[b.tier] > RANK[a.tier] ? b : a));
+  return { tier: top.tier, reason: top.reason, className: top.cls.name, classNames: tiers.map((t) => t.cls.name) };
 }
 
 export function autonomyState(store) {

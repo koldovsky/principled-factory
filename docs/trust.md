@@ -43,8 +43,8 @@ session persistence and a `--max-budget-usd` cap. A PreToolUse hook decides ever
 - file tools are confined to the workspace (real paths, case-insensitive on Windows, links followed);
 - writes to protected paths (task-protected files and `.factory/`) are denied;
 - data-boundary globs (for example `**/.env`) are denied even inside the workspace;
-- Bash runs only commands that equal an allowlisted prefix or extend it with arguments; chaining, pipes, redirects, substitution
-  and newlines are denied;
+- Bash runs only commands that equal an allowlisted prefix or extend it with arguments; any `&`, `|`, `;`, backtick, `<`, `>`,
+  `$(` or line break is denied;
 - network tools are denied unless the role declares external communication;
 - an engaged kill switch denies everything, read on every call.
 

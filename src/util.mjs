@@ -38,7 +38,20 @@ export function writeJsonAtomic(file, value) {
   ensureDir(path.dirname(file));
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(3).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  renameWithRetry(tmp, file);
+}
+
+// Windows can refuse a rename for a moment while another process (a reader, an indexer, antivirus) holds the target open.
+function renameWithRetry(from, to) {
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      if (!IS_WIN || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || i >= 20) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 * (i + 1));
+    }
+  }
 }
 
 export function appendJsonLine(file, value) {
