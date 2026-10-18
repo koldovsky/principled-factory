@@ -4,6 +4,7 @@
     "test": { "argv": ["node", "--test", "--test-reporter=tap"], "parse": "tap", "timeoutMs": 300000 }
   },
   "bashAllow": ["node --test"],
+  "confine": "node-permission",
   "sourceGlobs": ["**/*.mjs", "**/*.js", "**/*.cjs"],
   "testGlobs": ["test/**", "tests/**", "**/*.test.mjs", "**/*.test.js"]
 }

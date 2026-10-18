@@ -17,7 +17,8 @@ export function createWorkspace(target, wsDir) {
   const base = git(target, ['rev-parse', 'HEAD']);
   fs.mkdirSync(path.dirname(wsDir), { recursive: true });
   git(target, ['worktree', 'add', '--detach', wsDir, base]);
-  return { base };
+  // Its real path: a relative permission grant (--allow-fs-read=.) must cover the real paths the module loader opens.
+  return { base, ws: fs.realpathSync.native(wsDir) };
 }
 
 export function removeWorkspace(target, wsDir) {

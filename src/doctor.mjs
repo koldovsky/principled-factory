@@ -6,6 +6,7 @@ import { openStore } from './store.mjs';
 import { writeReadiness } from './pipeline.mjs';
 import { createWorkspace, removeWorkspace } from './workspace.mjs';
 import { runTestCommand } from './gates/deterministic.mjs';
+import { probeConfinement } from './confine.mjs';
 import { git, newId, resolveExecutable } from './util.mjs';
 import os from 'node:os';
 
@@ -25,6 +26,13 @@ export async function doctor({ controlDir, targetDir, storeDir }) {
     let ok = true;
     try { resolveExecutable(cmd.argv[0]); } catch { ok = false; }
     add(`command:${name}`, ok, ok ? `${cmd.argv[0]} is available` : `${cmd.argv[0]} not found`);
+  }
+  // Confinement is a claim about this machine's Node, so it is proven here rather than assumed from a version number.
+  if (config.profile.confined) {
+    const probe = await probeConfinement();
+    add('confinement', probe.ok, probe.ok
+      ? `Node ${process.version} confines the profile's commands to the workspace: outside reads and writes, links, child processes and node:sqlite are denied`
+      : `Node ${process.version} does not confine the profile's commands to the workspace: ${probe.problems.join('; ')}`);
   }
   if (isGit && checks.every((c) => c.ok)) {
     const ws = path.join(os.tmpdir(), newId('factory-doctor'));

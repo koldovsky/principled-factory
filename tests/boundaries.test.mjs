@@ -196,6 +196,29 @@ test('[P5.2][mechanism-off] without the policy decision, the same holdout read s
   try { assert.equal(run.attempts[0].agent.denials.length, 0); } finally { ex.cleanup(); }
 });
 
+// The snoop candidate logs each read attempt to snoop.log in the workspace; 'tests' marks imports by a test run.
+const testRunReads = (run) => fs.readFileSync(path.join(run.ws, 'snoop.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  .filter((r) => r.where === 'tests');
+
+test('[P4.2][P5.2] product code that reads the holdouts during the visible tests gets ERR_ACCESS_DENIED, and the tests still run', async () => {
+  const { ex, run } = await go('snoop-holdouts');
+  try {
+    assert.equal(gate(run, 'visible-tests', 0).verdict, 'PASS');
+    const reads = testRunReads(run);
+    assert.ok(reads.length >= 3, 'the builder\'s own test run, the visible tests and the repeat each imported the product');
+    assert.ok(reads.every((r) => r.error === 'ERR_ACCESS_DENIED'), JSON.stringify(reads));
+  } finally { ex.cleanup(); }
+});
+
+test('[P4.2][P5.2][mechanism-off] without confinement, the same product code reads the holdouts during the visible tests', async () => {
+  const { ex, run } = await go('snoop-holdouts', { unsafe: ['confinement'] });
+  try {
+    assert.equal(gate(run, 'visible-tests', 0).verdict, 'PASS');
+    const length = fs.readFileSync(path.join(ex.control, 'holdouts', 'set-a.json'), 'utf8').length;
+    assert.ok(testRunReads(run).some((r) => r.read === length), 'the hidden scenarios were read in full');
+  } finally { ex.cleanup(); }
+});
+
 test('[P4.2] a candidate containing holdout inputs fails and retires the leaked set', async () => {
   const { ex, store, run } = await go('leaky');
   try {
@@ -240,10 +263,13 @@ test('[P3.2] gates run in the configured order and stop at the first failure; it
 test('[P4.6] the map tells the builder how to run and observe the product, and its policy allows exactly that command', async () => {
   const { ex, store, run } = await go('honest');
   try {
-    assert.match(fs.readFileSync(path.join(run.ws, '.factory', 'MAP.md'), 'utf8'), /observe the product: sample outputs: `node demo\.mjs`/);
+    // factory.json says `node demo.mjs`; the node profile confines it, so this is the command the builder must type.
+    const observe = 'node --permission --allow-fs-read=. --allow-fs-write=. --no-experimental-sqlite demo.mjs';
+    assert.ok(fs.readFileSync(path.join(run.ws, '.factory', 'MAP.md'), 'utf8').includes(`observe the product: sample outputs: \`${observe}\``));
     const policy = JSON.parse(fs.readFileSync(path.join(runDir(store, run.id), 'policy-builder.json'), 'utf8'));
-    assert.equal(decide({ tool_name: 'Bash', tool_input: { command: 'node demo.mjs' }, cwd: run.ws }, policy).decision, 'allow');
-    assert.equal(decide({ tool_name: 'Bash', tool_input: { command: 'node demo.mjs && node -e 1' }, cwd: run.ws }, policy).decision, 'deny');
+    assert.equal(decide({ tool_name: 'Bash', tool_input: { command: observe }, cwd: run.ws }, policy).decision, 'allow');
+    assert.equal(decide({ tool_name: 'Bash', tool_input: { command: 'node demo.mjs' }, cwd: run.ws }, policy).decision, 'deny', 'the unconfined form');
+    assert.equal(decide({ tool_name: 'Bash', tool_input: { command: `${observe} && node -e 1` }, cwd: run.ws }, policy).decision, 'deny');
   } finally { ex.cleanup(); }
 });
 

@@ -78,8 +78,15 @@ allows only exact allowlisted commands (no `&`, `|`, `;`, backticks, redirects, 
 external communication, and denies everything while the kill switch is engaged. It fails closed on any error and writes each
 decision to the trace.
 
-**Honest limit:** this is policy-level isolation in one OS account. The allowlisted commands run code the agent wrote, and the
-hook cannot see what that code does. [trust.md](trust.md) states the consequences and the deployment contract that removes them.
+The allowlisted commands run code the agent wrote, and the hook cannot see what that code does. A profile can declare
+`"confine": "node-permission"`, as the Node profile does (`src/confine.mjs`): its test command, allowlist and observe commands
+then run under Node's permission model, with reads and writes limited to the workspace and no child processes, workers, addons
+or `node:sqlite`; test files run in the test runner's process. A command that cannot be confined is refused, the hook lets only
+file paths follow a confined command, and `doctor` probes on each machine that the confinement holds.
+
+**Honest limit:** this is still isolation inside one OS account. Network access, the holdout evaluator and other profiles are not
+confined, and code under test shares a process with its test report. [trust.md](trust.md) states the consequences and the
+deployment contract that removes them.
 
 ## Principle map
 
@@ -96,14 +103,14 @@ hook cannot see what that code does. [trust.md](trust.md) states the consequence
 | 3.2 | Fast feedback, cheapest first | configured gate order, stop at first failure, remediation written to progress | `pipeline`, `gates/*` |
 | 3.3 | Bounded runs, escalation | attempts, spend caps, timeouts, kill switch, needs-human with owner, question, default and deadline; `sweep` | `pipeline`, `store`, `cli` |
 | 4.1 | Deterministic before judgement | review runs only after every deterministic gate passed; reviewer never sees the builder's narrative | `pipeline`, `gates/review` |
-| 4.2 | Protected and hidden oracle | integrity gate; hook protects files; holdouts outside the workspace, sealable, separate process, counts only; leak scan retires sets | `gates/deterministic`, `gates/holdout`, `holdouts`, `policy/hook` |
+| 4.2 | Protected and hidden oracle | integrity gate; hook protects files; holdouts outside the workspace, sealable, separate process, counts only; leak scan retires sets; Node profile: code under test cannot read them | `gates/deterministic`, `gates/holdout`, `holdouts`, `policy/hook`, `confine` |
 | 4.3 | Evidence over assertions | three-state results; missing evidence is NOT-EARNED; boundary evidence; no silently skipped gates | `gates/result`, `gates/boundary`, `config` |
 | 4.4 | Adversarial review | refute-by-default brief; findings without a real file:line are dropped; unusable output goes to a human | `gates/review`, `context` |
 | 4.5 | Layered proof | baseline must fail, repeat consistency, light mutation testing | `gates/deterministic`, `gates/mutation` |
 | 4.6 | Product observable to the agent | observe commands in the map and in the builder's command allowlist | `context`, `config`, `pipeline` |
 | 4.7 | Maintainability target | dependency-direction, duplication and file-size sensors | `gates/maintainability` |
 | 5.1 | No lethal trifecta | roles declare capabilities; a role with all three is refused | `config` |
-| 5.2 | Least privilege, sandbox | worktree per run, scrubbed environment, hook confinement, exact command allowlist, no network tools | `workspace`, `policy/hook`, `agents/claude`, `util` |
+| 5.2 | Least privilege, sandbox | worktree per run, scrubbed environment, hook confinement, exact command allowlist, no network tools; Node profile commands under Node's permission model | `workspace`, `policy/hook`, `agents/claude`, `util`, `confine` |
 | 5.3 | Separation of duties | agents cannot approve; the requester cannot approve; two-human tiers need two people | `approvals` |
 | 5.4 | Config as supply chain | the config digest needs a human approval; a mid-run change stops the run; agents cannot write factory files | `config`, `pipeline`, `policy/hook` |
 | 6.1 | Standard tracing | OTel-GenAI-shaped spans for workflow, agents, tools and gates; content capture off by default | `trace`, `policy/hook` |
@@ -112,7 +119,7 @@ hook cannot see what that code does. [trust.md](trust.md) states the consequence
 | 6.4 | Outcome metrics, visible | report and static dashboard lead with outcomes and stability | `metrics`, `dashboard` |
 | 7.1 | Earned autonomy | change classes → tiers; the most restrictive effective tier over every class touched decides (a file counts for every class it matches, unclassified files keep the default, moves count both paths); promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy`, `workspace` |
 | 7.2 | Reversible delivery | local branch, never pushed; rollback target; incident intake | `delivery` |
-| 7.3 | Fix delivery first | `doctor` checks git, clean tree, CI config, tools, deterministic tests; runs need a recent pass | `doctor` |
+| 7.3 | Fix delivery first | `doctor` checks git, clean tree, CI config, tools, confinement, deterministic tests; runs need a recent pass | `doctor` |
 | 8.1 | Protect review capacity | WIP limit on waiting approvals; diff budget; «not verified» list in the proof pack | `approvals`, `gates/deterministic`, `pipeline` |
 | 8.2 | Engineer comprehension | approval must cite the current proof-pack digest; plan and evidence travel with the change | `approvals`, `delivery` |
 | 8.3 | AI policy, accountability | approved models and tools, unattended classes, data boundary, approver list; named approvals | `config`, `approvals` |

@@ -25,10 +25,14 @@ export function parseTap(text) {
   return tests;
 }
 
+// Used by the visible-tests, repeat, mutation and baseline checks and by doctor. A confined profile's command carries Node's
+// permission flags (src/confine.mjs) with grants relative to the start directory, so it starts in the workspace's real path.
 export async function runTestCommand({ ws, profile, shouldStop }) {
   const cmd = profile.commands.test;
   const [command, ...args] = cmd.argv;
-  const res = await runProcess({ command, args, cwd: ws, env: scrubEnv(), timeoutMs: cmd.timeoutMs ?? 300_000, shouldStop });
+  let cwd = ws;
+  try { cwd = fs.realpathSync.native(ws); } catch { /* a missing workspace is reported by the process start */ }
+  const res = await runProcess({ command, args, cwd, env: scrubEnv(), timeoutMs: cmd.timeoutMs ?? 300_000, shouldStop });
   const tests = cmd.parse === 'tap' ? parseTap(res.stdout) : [];
   return { ...res, tests, parse: cmd.parse };
 }

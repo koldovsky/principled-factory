@@ -13,6 +13,10 @@ const NETWORK_TOOLS = new Set(['WebFetch', 'WebSearch']);
 const HARMLESS_TOOLS = new Set(['TodoWrite']);
 // Any of these can start a second command: & (also &&), | (also ||), ;, backticks, redirects, $( and line breaks.
 const CHAINING = /[&|;`<>]|\$\(|\r|\n/;
+// After a command confined by Node's permission model only plain operands (file paths) may follow: an appended option
+// (--allow-fs-read=*) or a shell expansion (quotes, globs, braces, variables, escapes) could widen or undo the confinement.
+const CONFINED = /(^|\s)--permission(\s|$)/;
+const OPERAND = /^[\w./@%+,:=][\w./@%+,:=-]*$/;
 
 export function decide(payload, policy, killswitch = { engaged: false, disabledTools: [] }) {
   const tool = payload.tool_name;
@@ -40,8 +44,11 @@ export function decide(payload, policy, killswitch = { engaged: false, disabledT
   if (tool === 'Bash') {
     const command = String(input.command ?? '').trim();
     if (CHAINING.test(command)) return deny('commands may not chain, pipe or redirect; run one allowed command at a time');
-    const ok = (policy.bashAllow ?? []).some((prefix) => command === prefix || command.startsWith(prefix + ' '));
-    return ok ? allow() : deny(`only these commands are allowed: ${(policy.bashAllow ?? []).join(' · ') || 'none'}`);
+    const matching = (policy.bashAllow ?? []).filter((prefix) => command === prefix || command.startsWith(prefix + ' '));
+    if (!matching.length) return deny(`only these commands are allowed: ${(policy.bashAllow ?? []).join(' · ') || 'none'}`);
+    const operandsOnly = (prefix) => command.slice(prefix.length).trim().split(/\s+/).filter(Boolean).every((a) => OPERAND.test(a));
+    return matching.some((prefix) => !CONFINED.test(prefix) || operandsOnly(prefix))
+      ? allow() : deny(`only file paths may follow \`${matching[0]}\`: an option or a shell expansion could undo its confinement`);
   }
   if (HARMLESS_TOOLS.has(tool)) return allow();
   return deny(`${tool} is not allowed for this role`);

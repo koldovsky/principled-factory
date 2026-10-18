@@ -83,11 +83,61 @@ A follow-up check of the same family found two more 7.1 holes, both fixed and te
 Claims that survived: path containment (traversal, drive case, `\\?\` prefixes, junctions), fail-closed verdicts, oracle protection,
 separation of duties as asserted identities, status never set by an agent's message, and all ten mechanism-off tests.
 
+## 2026-10-18 · Confinement with Node's permission model (Windows 11, Node 24.18)
+
+Observed, not assumed (Node 22 was not available on this machine; its flag names come from the Node 22 docs):
+
+- `node --permission --allow-fs-read=<ws> --allow-fs-write=<ws> --test` fails at once: the runner spawns a child per test file,
+  and the permission model denies child processes. With `--allow-child-process`, Node 24.18 handed the children
+  `--allow-fs-read=` without its value (they exited with code 9), and any child process is outside the model anyway.
+- With test isolation `none` the tests run in the runner's process and stay confined: product code reading the control
+  directory's holdouts got `ERR_ACCESS_DENIED`, and the TAP output keeps its shape (a test file that fails to load is still
+  reported under its file name). Node 23.6 renamed the flag to `--test-isolation`; Node 22 only knows
+  `--experimental-test-isolation`, which Node 24 still accepts, so the factory uses that name.
+- Relative grants (`--allow-fs-read=.`) resolve against the start directory. A junction in that path broke them: the module
+  loader opens real paths, so test files failed to load with `ERR_ACCESS_DENIED`. Workspaces are now recorded by their real path,
+  and test runs start there.
+- Denied from inside: outside reads, writes, `stat`, listings and watches; `import()` and `require` of outside files;
+  junctions, file and relative symlinks; hard links; copies and renames from outside; `chdir` tricks; Buffer, URL, `\\?\`, UNC and
+  case variants; `process.binding`; child processes; workers; the inspector; addons; report and heap-snapshot writes outside;
+  `process.loadEnvFile`. Not restricted: network, signals to other processes (the parent included), the environment.
+- **`node:sqlite` bypasses the model.** Confined code created database files in the store. `--no-experimental-sqlite` removes
+  the module; the Node docs name `node:sqlite` as outside the model.
+- **An option appended to an allowlisted command widens the grant.** `... --test --allow-fs-read=*` read the holdouts again.
+  Quotes, globs, braces, `$VAR` and backslashes can smuggle options through bash, so the hook now accepts only plain file paths
+  after a confined command. An option written after the first file path is itself treated as a file pattern. A profile command
+  with `--env-file` would do the same from inside the workspace: `NODE_OPTIONS=--allow-fs-read=*` in the env file restored the
+  read.
+- **In-process tests share the reporter's process.** Product code that rewrote stdout and reset the exit code turned a failing
+  run into "2 pass, 0 fail". Under process isolation the same code corrupted the child's report stream, and the run reported only
+  the file name, as passing. So deliberately hostile code could forge the visible-test report before this change too; the holdout,
+  mutation and review gates do not rely on it.
+
+Built:
+
+- `src/confine.mjs`. A profile with `"confine": "node-permission"` (the Node profile) gets every command confined: the test
+  command, the allowlist and the observe commands. A command that cannot be confined (not `node`, or one carrying `--allow-*`,
+  `--experimental-sqlite`, a test-isolation flag, `--env-file` or a config-file flag) makes the configuration fail to load.
+- The map lists the commands the builder may type, which are the confined ones, with a line on what confinement means.
+- `doctor` runs a probe under the same flags: it must be able to use its workspace, and an outside read, an outside write, a
+  CVE-2025-55130-style relative symlink, a child process and `node:sqlite` must all be denied. Runs refuse without a passing check,
+  so a Node version that fails the probe cannot run the Node profile.
+- Unsafe test switch `confinement`: the run uses the plain commands; it is recorded and can never be released.
+- Tests: a builder whose product code reads the holdouts whenever it is imported. Confined, every test-run read gets
+  `ERR_ACCESS_DENIED` and the visible tests pass; with `confinement` switched off, the same code reads the holdouts in full. Its
+  log also shows the holdout evaluator reading them, because the evaluator still runs the candidate unconfined.
+
+Not done, and stated in docs/trust.md: the holdout evaluator, network egress, the test report's integrity and other profiles.
+`npm test` (146 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22, Linux and a real Claude Code builder
+typing the confined commands are not verified yet.
+
 ## Next
 
-1. Confine the Node profile's commands with Node's permission model (`--permission`, read and write limited to the workspace) so
-   code the agent runs cannot read the control directory or the store. Measure what breaks (`node --test` spawns child processes).
-2. Validate the generic-exit profile on a non-Node repository.
-3. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
+1. Confine the holdout evaluator (read the workspace and its evaluator, write nothing): under the Node profile it is now the one
+   place where the agent's code runs unconfined.
+2. Run one honest Claude Code task to check that a real builder types the confined commands and that Claude Code's allow rules
+   match them.
+3. Validate the generic-exit profile on a non-Node repository.
+4. A deployment recipe for the trust contract: container per builder, egress proxy, evaluator under its own account, signed
    approvals.
-4. Planted-defect calibration for the reviewer (4.4), run against the improvement loop's audit tasks.
+5. Planted-defect calibration for the reviewer (4.4), run against the improvement loop's audit tasks.

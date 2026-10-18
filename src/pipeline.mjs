@@ -1,7 +1,7 @@
 // The fixed stage graph (principle 3.1). Agents act only inside plan, build and review; their messages never set a status.
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadConfig, checkModelApproved, FACTORY_ROOT } from './config.mjs';
+import { allowedCommands, loadConfig, checkModelApproved, FACTORY_ROOT } from './config.mjs';
 import { admissionProblems, loadTask, sizeOf } from './task.mjs';
 import { listSets } from './holdouts.mjs';
 import { isApproved, reviewQueue } from './approvals.mjs';
@@ -25,8 +25,10 @@ const DAY_MS = 86_400_000;
 
 // Test-only switch that turns off one named mechanism so a test can prove the mechanism is what blocks an attack.
 // Recorded on the run, shown in the proof pack, and unsafe runs can never be released.
-export const UNSAFE_SWITCHES = ['admission', 'config-approval', 'wip', 'budget', 'killswitch', 'integrity', 'mutation', 'holdouts', 'autonomy', 'hook', 'trifecta', 'fail-closed'];
+export const UNSAFE_SWITCHES = ['admission', 'config-approval', 'wip', 'budget', 'killswitch', 'integrity', 'mutation', 'holdouts', 'autonomy', 'hook', 'trifecta', 'fail-closed',
+  'confinement'];
 const skip = (run, name) => (run.unsafe ?? []).includes(name);
+const configOptions = (run) => ({ skipTrifecta: skip(run, 'trifecta'), unconfined: skip(run, 'confinement') });
 
 // --- shared helpers ------------------------------------------------------------------------------------------------
 function factoryVersion() {
@@ -39,9 +41,7 @@ function policyFor(role, { run, config, store, task }) {
     runId: run.id, role, attempt: run.attempt, workspace: run.ws,
     protected: [...task.protected, `${FACTORY_DIR}/**`],
     readDeny: config.policy.dataBoundary.denyGlobs,
-    bashAllow: role === 'builder'
-      ? [...(config.profile.bashAllow ?? Object.values(config.profile.commands).map((c) => c.argv.join(' '))), ...Object.values(config.profile.observe ?? {})]
-      : [],
+    bashAllow: role === 'builder' ? [...allowedCommands(config.profile), ...Object.values(config.profile.observe ?? {})] : [],
     networkAllowed: r.capabilities.externalComms,
     killswitch: store.killswitch,
     trace: traceFile(store, run.id),
@@ -101,7 +101,7 @@ async function preflight(ctx) {
   const { run, store } = ctx;
   const refuse = (reason, problems = []) => { transition(store, run, 'refused', { reason, problems }); return 'stop'; };
   let config;
-  try { config = loadConfig(run.controlDir, { skipTrifecta: skip(run, 'trifecta') }); } catch (error) { return refuse(error.message); }
+  try { config = loadConfig(run.controlDir, configOptions(run)); } catch (error) { return refuse(error.message); }
   ctx.config = config;
   run.configDigest = config.digest;
   if (!skip(run, 'config-approval') && !isApproved(store, 'config', 'factory', config.digest)) {
@@ -129,8 +129,9 @@ async function preflight(ctx) {
   if (problems.length && !skip(run, 'admission')) return refuse('task not admissible', problems);
   run.ws = path.join(runDir(store, run.id), 'ws');
   if (fs.existsSync(run.ws)) removeWorkspace(run.targetDir, run.ws);
-  const { base } = createWorkspace(run.targetDir, run.ws);
+  const { base, ws } = createWorkspace(run.targetDir, run.ws);
   run.base = base;
+  run.ws = ws;
   const baseline = await runTestCommand({ ws: run.ws, profile: config.profile });
   const baseProblems = judgeBaseline(baseline, task);
   if (baseProblems.length && !skip(run, 'admission')) { removeWorkspace(run.targetDir, run.ws); return refuse('acceptance tests do not prove the change', baseProblems); }
@@ -287,7 +288,10 @@ function notVerifiedList(ctx) {
   const adapter = config.factory.agent.adapter;
   if (adapter === 'scripted') items.push('agent adapter "scripted": boundaries enforced by the factory\'s policy function, not by Claude Code\'s hook');
   if (adapter === 'command') items.push('agent adapter "command": NO tool-level confinement; only the external CLI\'s own settings limited it, and its cost is unknown');
-  items.push('isolation is policy-level in one OS account: code the agent wrote and ran (tests) could read other files (docs/trust.md)');
+  items.push(config.profile.confined
+    ? 'code the agent wrote ran under Node\'s permission model, its files limited to the workspace; not confined: its network access, '
+      + 'its own test report (same process) and the holdout evaluator, which runs the candidate unconfined (docs/trust.md)'
+    : 'isolation is policy-level in one OS account: code the agent wrote and ran (tests) could read other files (docs/trust.md)');
   for (const na of ctx.run.attempts.at(-1)?.notApplicable ?? []) items.push(`not applicable — ${na}`);
   const mutation = ctx.run.attempts.at(-1)?.gates.find((g) => g.id === 'mutation');
   for (const s of mutation?.evidence?.survived ?? []) items.push(`mutant survived at ${s.file}:${s.line} (${s.operator}): no test pins this line`);
@@ -347,7 +351,7 @@ export async function advance({ store, runId, recover = false }) {
   try {
     return await span(store, run.id, 'invoke_workflow factory.run', 'invoke_workflow', { 'factory.task': run.taskId }, async () => {
       if (run.state !== 'created') {
-        ctx.config = loadConfig(run.controlDir, { skipTrifecta: skip(run, 'trifecta') });
+        ctx.config = loadConfig(run.controlDir, configOptions(run));
         if (ctx.config.digest !== run.configDigest) {
           throw new FactoryError('CONFIG_CHANGED', `factory configuration changed during run ${run.id} (${run.configDigest.slice(0, 12)} → ${ctx.config.digest.slice(0, 12)}); start a new run`);
         }

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { FactoryError, ensureDir } from './util.mjs';
+import { allowedCommands } from './config.mjs';
 import { FACTORY_DIR } from './workspace.mjs';
 
 function firstLine(file) {
@@ -25,8 +26,10 @@ export function buildMap({ config, task, plan, profile }) {
     '- Protected files (tests, factory files) cannot be changed; edits to them are refused.',
     '',
     '## Allowed commands',
-    ...Object.values(profile.commands).map((c) => `- \`${c.argv.join(' ')}\``),
+    ...allowedCommands(profile).map((c) => `- \`${c}\``),
     profile.observe ? `- To run and observe the product: ${Object.entries(profile.observe).map(([k, v]) => `${k}: \`${v}\``).join('; ')}` : '',
+    profile.confined ? '- Type them exactly; only file paths may follow. They run under Node\'s permission model: code reads and writes only '
+      + 'inside this directory and cannot start processes; test files share one process.' : '',
     '',
     '## Knowledge (read only what you need)',
     ...config.knowledge.map((k) => `- \`${FACTORY_DIR}/knowledge/${k}\` — ${firstLine(path.join(config.controlDir, 'knowledge', k))}`),

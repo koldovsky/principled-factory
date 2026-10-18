@@ -10,7 +10,9 @@ cites the proof.
   the attack then succeeds.
 - **The status is honest:** 23 principles are *enforced* and 12 are *partial*, each with its limits stated in
   [docs/principles.json](docs/principles.json). The biggest limit applies to all of them: isolation is policy-level, inside one OS
-  account. [docs/trust.md](docs/trust.md) says what that means and what a deployment must add.
+  account. With the Node profile, code the agent runs through its allowed commands, and in the factory's own test runs, is
+  confined to the workspace by Node's permission model; its network access, the holdout evaluator and other profiles are not.
+  [docs/trust.md](docs/trust.md) says what that means and what a deployment must add.
 - **Validated with real Claude Code** on 18 October 2026: an honest task was accepted end to end for about $0.04 a run, and a
   sandbox probe through the production adapter was refused at every forbidden step. See [Validation](#validation).
 - Node.js 22.17+, no runtime dependencies, Windows and Linux.
@@ -36,7 +38,7 @@ holdouts and an evaluator for your product.
 
 ```bash
 F="node bin/factory.mjs"; C="--control ./control"; T="--target ../my-repo"; S="--store ./store"
-$F doctor $C $T $S                                  # readiness: git, clean tree, CI config, deterministic tests
+$F doctor $C $T $S                                  # readiness: git, clean tree, CI config, confinement, deterministic tests
 $F approve config $C $S --as alice                  # a human approves this exact configuration digest
 $F approve intent my-task $C $S --as alice          # ...and this exact task
 $F holdouts seal set-a $C                           # optional: encrypt hidden scenarios (key in FACTORY_HOLDOUT_KEY)
@@ -85,9 +87,11 @@ the `&` rule, rename handling); the third honest run used the final code. Total 
 ## Limits
 
 The factory stops at a reviewed local branch. It has no scheduler, containers, signed attestations, canaries or production
-deployment. Allowlisted commands such as `node --test` run code the agent wrote, as your OS user, and the policy hook cannot see
-what that code does. Treat local runs as a strong harness against mistaken or overfitting agents, not as a sandbox against a
-hostile one. [docs/trust.md](docs/trust.md) gives the threat model and the deployment contract for unattended use.
+deployment. Allowlisted commands run code the agent wrote, as your OS user, and the policy hook cannot see what that code does.
+With the Node profile those commands run under Node's permission model, so the code can read and write only the workspace and
+cannot start processes. It can still use the network and forge its own test report, the holdout evaluator runs it unconfined, and
+other profiles are not confined. Treat local runs as a strong harness against mistaken or overfitting agents, not as a sandbox
+against a hostile one. [docs/trust.md](docs/trust.md) gives the threat model and the deployment contract for unattended use.
 
 ## Layout
 
@@ -97,8 +101,8 @@ src/pipeline.mjs         the fixed stage graph: preflight, plan, build, gates, r
 src/policy/hook.mjs      PreToolUse policy decision (also used by the scripted adapter)
 src/gates/               boundary, deterministic (integrity, diff, tests, repeat, baseline), maintainability, mutation, holdout, review
 src/agents/              Claude Code, generic command and scripted adapters
-src/*.mjs                store, approvals, autonomy, delivery, metrics, dashboard, doctor, gc, improve, conformance
-profiles/                stack profiles (node, generic-exit)
+src/*.mjs                store, approvals, autonomy, confine, delivery, metrics, dashboard, doctor, gc, improve, conformance
+profiles/                stack profiles (node, confined by Node's permission model; generic-exit)
 examples/slug/           a target repository and its control directory (tasks, holdouts, evaluators, scripted behaviours)
 docs/                    principles, design, trust, principle registry
 tests/                   tagged tests; `factory conformance` reads the tags

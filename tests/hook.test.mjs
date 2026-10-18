@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { decide } from '../src/policy/hook.mjs';
+import { confineCommand } from '../src/confine.mjs';
 import { IS_WIN } from '../src/util.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -78,6 +79,18 @@ test('[P5.2] chained, piped or redirected commands are denied even when they sta
   }
   assert.equal(call('Bash', { command: 'node --test --test-reporter=tap' }).decision, 'allow');
   assert.equal(call('Bash', { command: 'node --testing' }).decision, 'deny');
+});
+
+test('[P5.2] after a command confined by Node\'s permission model only file paths may follow: no options, quotes, globs or expansions', () => {
+  const confined = confineCommand('node --test');
+  const bash = (command) => decide({ tool_name: 'Bash', tool_input: { command }, cwd: ws }, { ...policy, bashAllow: [confined] }).decision;
+  assert.equal(bash(confined), 'allow');
+  assert.equal(bash(`${confined} test/slug.test.mjs`), 'allow');
+  for (const extra of ['--allow-fs-read=*', '--allow-child-process', '--no-permission', '--test-isolation=process', '-r ./x.cjs', 'x.mjs --import=./y.mjs',
+    "'--allow-fs-read=*'", '"--allow-child-process"', '\\--allow-fs-read=*', '*', 'test/*.mjs', '{--allow-fs-read=*,x}', '$NODE_FLAGS', '${X}', '~']) {
+    assert.equal(bash(`${confined} ${extra}`), 'deny', extra);
+  }
+  assert.equal(bash('node --test'), 'deny', 'the unconfined form is not on the allowlist');
 });
 
 test('[P5.1][P5.2] network tools are denied for roles without external communication', () => {

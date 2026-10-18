@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertValid } from './schema.mjs';
+import { confineProfile } from './confine.mjs';
 import { FactoryError, listFiles, readJson, sha256, hashFile } from './util.mjs';
 
 export const FACTORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,6 +83,8 @@ const profileSchema = {
     sourceGlobs: { type: 'array', items: { type: 'string' } },
     testGlobs: { type: 'array', items: { type: 'string' } },
     observe: { type: 'object' },
+    bashAllow: { type: 'array', items: { type: 'string' } },
+    confine: { enum: ['node-permission'] },
   },
 };
 
@@ -124,7 +127,13 @@ export function configDigest(controlDir, profileFile) {
 
 export const KNOWN_GATES = ['integrity', 'diff', 'maintainability', 'visible-tests', 'repeat', 'mutation', 'holdouts', 'review'];
 
-export function loadConfig(controlDir, { skipTrifecta = false } = {}) {
+// What the builder may type besides the observe commands: the profile's allowlist, or else its own commands.
+export function allowedCommands(profile) {
+  return profile.bashAllow ?? Object.values(profile.commands).map((c) => c.argv.join(' '));
+}
+
+// `unconfined` is the recorded unsafe test switch 'confinement' (src/pipeline.mjs).
+export function loadConfig(controlDir, { skipTrifecta = false, unconfined = false } = {}) {
   const abs = path.resolve(controlDir);
   const factory = assertValid(readJson(path.join(abs, 'factory.json')), factorySchema, 'factory.json');
   const policy = assertValid(readJson(path.join(abs, 'policy.json')), policySchema, 'policy.json');
@@ -151,7 +160,8 @@ export function loadConfig(controlDir, { skipTrifecta = false } = {}) {
   }
   const knowledge = listFiles(path.join(abs, 'knowledge')).filter((f) => f.endsWith('.md'));
   return {
-    controlDir: abs, factory, policy, rules, profile, knowledge,
+    // Code the agent wrote runs under Node's permission model wherever the profile declares it (principles 4.2, 5.2).
+    controlDir: abs, factory, policy, rules, profile: unconfined ? profile : confineProfile(profile), knowledge,
     digest: configDigest(abs, profile.file),
   };
 }
