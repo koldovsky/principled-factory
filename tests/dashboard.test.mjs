@@ -231,7 +231,7 @@ test('[P6.4] review capacity is highlighted when WIP reaches the limit', () => {
   for (const review of [{ wip: 5, wipLimit: 5 }, { wip: 7, wipLimit: 5 }]) {
     const doc = renderDashboard({ review });
     assert.match(openingTag(doc, 'review-wip'), /data-signal="bad"/, `wip ${review.wip} of ${review.wipLimit}`);
-    assert.match(doc, /new runs are refused until approvals clear/);
+    assert.match(doc, /new runs are refused until people clear the queue/);
     assert.match(doc, /<span style="width:100%">/, 'meter full');
   }
   const under = renderDashboard({ review: { wip: 4, wipLimit: 5, oldestWaitingMinutes: 95 } });

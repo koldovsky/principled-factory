@@ -283,7 +283,7 @@ ${tiles}</div>`);
 function renderReview(m) {
   const meta = {
     id: 'review', index: '02', title: 'Review capacity', principle: '8.1', span: 'narrow',
-    sub: 'Pending human approvals against the WIP limit.',
+    sub: 'Runs waiting for a person (plan or release approvals, escalations) against the WIP limit.',
   };
   if (!isObject(m.review)) return section(meta, empty('No review data in this window.'));
 
@@ -296,7 +296,7 @@ function renderReview(m) {
   let note = '';
   if (atLimit) {
     const state = wip > limit ? `Over the WIP limit by ${formatNumber(wip - limit)}` : 'At the WIP limit';
-    note = html`${marker('▲')}${state} · new runs are refused until approvals clear`;
+    note = html`${marker('▲')}${state} · new runs are refused until people clear the queue`;
   } else if (known) {
     note = html`${marker('●')}${formatNumber(limit - wip)} of ${formatNumber(limit)} review slots free`;
   }
@@ -309,7 +309,7 @@ function renderReview(m) {
   const oldestHint = approxDuration(oldest);
 
   return section(meta, html`<div class="capacity" data-metric="review-wip"${signal ? html` data-signal="${signal}"` : ''}>
-<p class="capacity-figure"><span class="capacity-wip">${formatNumber(wip)}</span><span class="capacity-limit">/ ${formatNumber(limit)}</span><span class="capacity-caption">approvals pending</span></p>
+<p class="capacity-figure"><span class="capacity-wip">${formatNumber(wip)}</span><span class="capacity-limit">/ ${formatNumber(limit)}</span><span class="capacity-caption">waiting for a person</span></p>
 <div class="meter" role="img" aria-label="${label}"><span style="width:${atLimit ? 100 : share(wip, limit)}%"></span></div>
 ${note ? html`<p class="capacity-note">${note}</p>` : ''}
 </div>
