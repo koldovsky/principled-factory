@@ -1,0 +1,12 @@
+{
+  "evaluator": "slug-holdout.mjs",
+  "note": "Reserve set: replaces set-a once set-a's contents leak.",
+  "scenarios": [
+    { "id": "B1", "input": "Hello;World", "expect": "helloworld" },
+    { "id": "B2", "input": "One, two, three!", "expect": "one-two-three" },
+    { "id": "B3", "input": "Q&A session", "expect": "qa-session" },
+    { "id": "B4", "input": "  (draft) Notes ", "expect": "draft-notes" },
+    { "id": "B5", "input": "100% done", "expect": "100-done" },
+    { "id": "B6", "input": true, "expectError": "TypeError" }
+  ]
+}

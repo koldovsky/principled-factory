@@ -1,0 +1,9 @@
+{
+  "name": "generic-exit",
+  "commands": {
+    "test": { "argv": ["make", "test"], "parse": "exit", "timeoutMs": 600000 }
+  },
+  "bashAllow": ["make test"],
+  "sourceGlobs": ["**/*"],
+  "testGlobs": ["test/**", "tests/**"]
+}

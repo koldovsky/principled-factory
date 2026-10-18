@@ -1,0 +1,8 @@
+{
+  "evaluator": "readme-holdout.mjs",
+  "note": "README must show a worked example of input and output.",
+  "scenarios": [
+    { "id": "D1", "mustInclude": ["hello-world"] },
+    { "id": "D2", "mustInclude": ["slug("] }
+  ]
+}

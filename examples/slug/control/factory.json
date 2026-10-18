@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "slug-factory",
+  "profile": "node",
+  "agent": { "adapter": "scripted", "model": "claude-haiku-5-5", "reviewModel": "claude-sonnet-5-5", "script": "behaviours.mjs" },
+  "roles": {
+    "planner": { "capabilities": { "privateData": true, "untrustedContent": true, "externalComms": false }, "tools": ["Read", "Glob", "Grep"] },
+    "builder": { "capabilities": { "privateData": true, "untrustedContent": true, "externalComms": false }, "tools": ["Read", "Glob", "Grep", "Edit", "Write", "Bash"] },
+    "reviewer": { "capabilities": { "privateData": true, "untrustedContent": true, "externalComms": false }, "tools": ["Read", "Glob", "Grep"] }
+  },
+  "budgets": { "maxAttempts": 2, "runUsd": 1.0, "dailyUsd": 20, "agentTimeoutMs": 600000 },
+  "gates": {
+    "order": ["integrity", "diff", "maintainability", "visible-tests", "repeat", "mutation", "holdouts", "review"],
+    "repeat": 1,
+    "diffBudgetLines": 200,
+    "mutation": { "maxMutants": 6, "minScore": 0.5 }
+  },
+  "autonomy": {
+    "classes": [
+      { "name": "docs", "paths": ["**/*.md", "docs/**"], "tier": "auto" },
+      { "name": "code", "paths": ["**/*.mjs", "**/*.js"], "tier": "one-human", "earnable": true },
+      { "name": "migration", "paths": ["migrations/**"], "tier": "two-humans" }
+    ],
+    "default": "one-human",
+    "promoteAfter": 3
+  },
+  "review": { "wipLimit": 3 },
+  "escalation": { "owner": "tech-lead", "defaultAfterHours": 48, "defaultAction": "abandon" },
+  "context": { "mapMaxLines": 60 },
+  "observe": { "sample outputs": "node demo.mjs" },
+  "trace": { "captureContent": false },
+  "holdouts": { "requireSealed": false, "keyEnv": "FACTORY_HOLDOUT_KEY" },
+  "readiness": { "maxAgeDays": 7 }
+}

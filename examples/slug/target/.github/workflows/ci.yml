@@ -1,0 +1,8 @@
+name: ci
+on: [push, pull_request]
+permissions: { contents: read }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Example target. CI is configured here so the factory's readiness check passes."

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "slug",
+  "title": "Normalize user-visible URL slugs",
+  "intent": "Implement slug(text) in slug.mjs: trim surrounding whitespace, collapse whitespace runs to one hyphen, lowercase ASCII, remove punctuation, and reject non-string input with a TypeError.",
+  "size": "small",
+  "requirements": [
+    { "id": "R1", "description": "Whitespace and case normalize deterministically", "verifiedBy": ["visible:trim-case", "visible:spaces", "holdout:set-a"] },
+    { "id": "R2", "description": "Punctuation is removed", "verifiedBy": ["visible:punctuation", "holdout:set-a"] },
+    { "id": "R3", "description": "Non-string input is rejected with a TypeError", "verifiedBy": ["visible:invalid-input", "holdout:set-a"] }
+  ],
+  "nonFunctionals": {
+    "security": "pure function: no I/O, no processes, no network",
+    "accessRules": "n/a: touches no data",
+    "idempotency": "slug(slug(x)) equals slug(x)",
+    "tenancy": "n/a: stateless",
+    "failureModes": "throws TypeError for non-strings; never returns undefined"
+  },
+  "visibleTests": { "failToPass": ["trim-case", "spaces", "punctuation", "invalid-input"], "passToPass": ["exports-slug"] },
+  "holdouts": ["set-a"],
+  "protected": ["test/**", "package.json", ".github/**"]
+}

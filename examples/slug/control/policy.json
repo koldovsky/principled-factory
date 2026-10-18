@@ -1,0 +1,8 @@
+{
+  "approvedModels": ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "scripted"],
+  "approvedTools": ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+  "unattendedClasses": ["docs"],
+  "dataBoundary": { "denyGlobs": ["**/.env", "**/*.pem", "**/secrets/**"] },
+  "attribution": { "trailer": "Assisted-by" },
+  "approvers": []
+}

@@ -1,0 +1,15 @@
+{
+  "name": "principled-factory",
+  "version": "0.1.0",
+  "description": "A small agentic software factory that implements 35 factory principles, each backed by code and a negative test.",
+  "type": "module",
+  "bin": { "factory": "bin/factory.mjs" },
+  "engines": { "node": ">=22.17" },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "conformance": "node bin/factory.mjs conformance",
+    "demo": "node scripts/demo.mjs"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true
+}

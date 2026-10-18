@@ -1,0 +1,7 @@
+{
+  "maxFileLines": 300,
+  "duplication": { "minLines": 6 },
+  "dependencyRules": [
+    { "from": "**/*.mjs", "mustNotImport": ["node:child_process", "child_process", "node:net", "node:http", "node:https"], "reason": "the slug library is pure: no processes or network" }
+  ]
+}

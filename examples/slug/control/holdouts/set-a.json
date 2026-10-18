@@ -1,0 +1,14 @@
+{
+  "evaluator": "slug-holdout.mjs",
+  "note": "Written from the task intent only; lives outside every workspace.",
+  "scenarios": [
+    { "id": "A1", "input": "Ready, Set, Go", "expect": "ready-set-go" },
+    { "id": "A2", "input": "Wait... what?", "expect": "wait-what" },
+    { "id": "A3", "input": "  Mixed CASE Input  ", "expect": "mixed-case-input" },
+    { "id": "A4", "input": "a  b   c", "expect": "a-b-c" },
+    { "id": "A5", "input": "C'est la vie!", "expect": "cest-la-vie" },
+    { "id": "A6", "input": 42, "expectError": "TypeError" },
+    { "id": "A7", "omitInput": true, "expectError": "TypeError" },
+    { "id": "A8", "input": "Version 2.0 released", "expect": "version-20-released" }
+  ]
+}

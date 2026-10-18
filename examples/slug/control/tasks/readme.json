@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "readme",
+  "title": "Show a worked example in the README",
+  "intent": "Add one example of slug() input and output to README.md.",
+  "size": "small",
+  "requirements": [
+    { "id": "R1", "description": "The README shows an input and its slug", "verifiedBy": ["holdout:docs-a"] }
+  ],
+  "nonFunctionals": {
+    "security": "documentation only",
+    "accessRules": "n/a",
+    "idempotency": "n/a",
+    "tenancy": "n/a",
+    "failureModes": "n/a: no code changes"
+  },
+  "visibleTests": { "failToPass": [], "passToPass": ["exports-slug"] },
+  "holdouts": ["docs-a"],
+  "protected": ["test/**", "package.json", ".github/**", "slug.mjs"]
+}
