@@ -29,8 +29,9 @@ export async function holdoutGate({ config, task, ws, store, changedContents, sh
     }
     const evaluators = path.join(config.controlDir, 'evaluators');
     const evaluator = path.join(evaluators, set.evaluator);
-    // Confined, the candidate may read the evaluator's directory, so that must never be the control directory or the holdouts.
-    if (!fs.existsSync(evaluator) || !isInside(path.dirname(evaluator), evaluators)) {
+    // Confined, the candidate may read the directory the evaluator really lives in, so that must never be the control directory
+    // or the holdouts. Checked by real path, as it is granted, so a link cannot place it elsewhere.
+    if (!fs.existsSync(evaluator) || !isInside(path.dirname(fs.realpathSync.native(evaluator)), evaluators)) {
       sets.push({ id, digest, verdict: NOT_EARNED, summary: `evaluator for ${id} must be a file under control/evaluators, not ${set.evaluator}`, passed: 0,
         total: set.scenarios.length });
       continue;

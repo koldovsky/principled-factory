@@ -59,21 +59,43 @@ test('[P5.2] the holdout evaluator may read only its own directory and the works
     `--allow-fs-read=${real(here)}`, '--no-experimental-sqlite', real(evaluator)]);
 });
 
-test('[P4.2][P5.2] an evaluator outside control/evaluators is refused: its directory is what the candidate may read', async () => {
+// A control copy whose set-a evaluator lives in the control directory itself, from where it would hand the candidate the
+// holdouts next to it. `place` puts it on set-a's path to the evaluator; the holdout gate then runs as in a real run.
+async function gateWithEvaluatorOutside(place) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-confine-'));
   made.push(dir);
   const control = path.join(dir, 'control');
   fs.cpSync(EXAMPLE_CONTROL, control, { recursive: true });
-  // Run from the control directory itself, the evaluator would hand the candidate the holdouts next to it.
   fs.copyFileSync(path.join(control, 'evaluators', 'slug-holdout.mjs'), path.join(control, 'slug-holdout.mjs'));
   const f = path.join(control, 'holdouts', 'set-a.json');
-  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), evaluator: '../slug-holdout.mjs' }));
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), evaluator: place(control) }));
   const ws = path.join(dir, 'ws');
   fs.mkdirSync(ws);
-  const result = await holdoutGate({ config: loadConfig(control), task: { holdouts: ['set-a'] }, ws, store: { holdouts: path.join(dir, 'holdouts.json') },
+  return holdoutGate({ config: loadConfig(control), task: { holdouts: ['set-a'] }, ws, store: { holdouts: path.join(dir, 'holdouts.json') },
     changedContents: {} });
+}
+
+test('[P4.2][P5.2] an evaluator outside control/evaluators is refused: its directory is what the candidate may read', async () => {
+  const result = await gateWithEvaluatorOutside(() => '../slug-holdout.mjs');
   assert.equal(result.verdict, 'NOT-EARNED');
   assert.match(result.evidence.sets[0].summary, /must be a file under control\/evaluators, not \.\.\/slug-holdout\.mjs/);
+});
+
+test('[P4.2][P5.2] an evaluator linked into control/evaluators from outside is refused too: its real path decides', async (t) => {
+  let linked = true;
+  const result = await gateWithEvaluatorOutside((control) => {
+    try {
+      fs.symlinkSync(path.join(control, 'slug-holdout.mjs'), path.join(control, 'evaluators', 'linked.mjs'), 'file');
+    } catch (error) {
+      if (error.code !== 'EPERM') throw error;
+      linked = false;
+    }
+    return 'linked.mjs';
+  });
+  // Windows creates file symlinks only with Developer Mode or as an administrator.
+  if (!linked) return t.skip('this account cannot create file symlinks');
+  assert.equal(result.verdict, 'NOT-EARNED');
+  assert.match(result.evidence.sets[0].summary, /must be a file under control\/evaluators, not linked\.mjs/);
 });
 
 test('[P7.3] doctor proves the confinement on this machine before any agent runs', async () => {

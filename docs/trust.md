@@ -34,8 +34,9 @@ node --permission --allow-fs-read=<evaluator's directory> --allow-fs-read=<works
 The paths are absolute real paths, and the process starts in an empty scratch directory. The evaluator, and the candidate it
 imports, can read only the workspace and the evaluator's directory, and can write nothing: not the workspace, which the next
 attempt starts from, and not the store or any other place where the hidden inputs it is given could wait for a later attempt.
-The evaluator must be a file under `control/evaluators`, because the candidate may read its directory; keep scenario data out of
-that directory. A confined evaluator cannot start processes either, so it must import the candidate rather than run it.
+The evaluator must be a file under `control/evaluators`, judged by its real path so that a link cannot place it elsewhere,
+because the candidate may read its directory; keep scenario data out of that directory. A confined evaluator cannot start
+processes either, so it must import the candidate rather than run it.
 
 What is still not confined:
 

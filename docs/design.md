@@ -83,11 +83,11 @@ The allowlisted commands run code the agent wrote, and the hook cannot see what 
 then run under Node's permission model, with reads and writes limited to the workspace and no child processes, workers, addons
 or `node:sqlite`; test files run in the test runner's process. A command that cannot be confined is refused, the hook lets only
 file paths follow a confined command, and `doctor` probes on each machine that the confinement holds. The holdout evaluator, which
-imports the candidate, runs under the same model with narrower grants (`confineEvaluator`): it may read its own directory under
-`control/evaluators` and the workspace, by absolute real path, and write nothing, so the candidate can neither read the hidden
-scenarios from disk nor keep the inputs it is given for a later attempt. Since it cannot start processes, a confined evaluator
-must import the candidate in-process. The gate keeps the evaluator's stderr as evidence, never as feedback. `doctor` does not
-probe these narrower flags; the end-to-end tests do.
+imports the candidate, runs under the same model with narrower grants (`confineEvaluator`): it may read its own directory, which
+must really lie under `control/evaluators`, and the workspace, by absolute real path, and write nothing, so the candidate can
+neither read the hidden scenarios from disk nor keep the inputs it is given for a later attempt. Since it cannot start processes,
+a confined evaluator must import the candidate in-process. The gate keeps the evaluator's stderr as evidence, never as feedback.
+`doctor` does not probe these narrower flags; the end-to-end tests do.
 
 **Honest limit:** this is still isolation inside one OS account. Network access and other profiles are not confined, code under
 test shares a process with its test report, and the candidate shares one with the holdout evaluator, so deliberately hostile code

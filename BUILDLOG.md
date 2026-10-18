@@ -156,8 +156,9 @@ Built:
 
 - `confineEvaluator` in `src/confine.mjs`. The holdout gate uses it whenever the profile is confined, so the unsafe switch
   `confinement` turns it off along with the rest. The workspace, the evaluator and the scratch directory are used by real path.
-  The evaluator must be a file under `control/evaluators`, or the set is NOT-EARNED: its directory is granted to the candidate,
-  so it must never be the control directory or the holdouts.
+  The evaluator must be a file under `control/evaluators`, judged by its real path, or the set is NOT-EARNED: its directory is
+  granted to the candidate, so it must never be the control directory or the holdouts. A first version checked the path as
+  written, which a file symlink in `evaluators/` would have passed while the grant followed the link to the control directory.
 - The gate keeps the evaluator's stderr (its first 2,000 characters) as evidence whatever the verdict, so a denial inside the
   evaluator is visible to people. It never reaches the builder, whose feedback stays counts only.
 - The map tells the builder that hidden scenarios run its code with read access to the workspace and no writes, so an honest
@@ -166,11 +167,14 @@ Built:
   it is given in the run directory, outside the workspace.
 - Tests: confined, the candidate's read inside the evaluator gets `ERR_ACCESS_DENIED`, as do its log write in the workspace and
   every write outside it, and the honest slug passes the holdouts; with `confinement` switched off, it reads the scenarios in full
-  and keeps the inputs. Unit tests pin the evaluator's flags and refuse an evaluator outside `control/evaluators`.
+  and keeps the inputs. Unit tests pin the evaluator's flags and refuse an evaluator outside `control/evaluators`, also one
+  linked in from outside. That last test needs file symlinks, which this Windows account cannot create, so it skips here; a
+  simulation that made `realpath` follow such a link was refused by the new check and let through by the first version.
 
 Not done, and stated in docs/trust.md: network egress, the reports of the processes the agent's code runs in (its test report
 and the evaluator's result), other profiles, and a `doctor` probe of the evaluator's flags (the end-to-end tests cover them).
-`npm test` (150 tests) and `factory conformance` pass on Windows with Node 24.18. Node 22 and Linux are not verified yet.
+`npm test` (151 tests, the symlink test skipped) and `factory conformance` pass on Windows with Node 24.18. Node 22 and Linux
+are not verified yet.
 
 ## Next
 
