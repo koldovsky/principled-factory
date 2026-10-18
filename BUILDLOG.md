@@ -46,9 +46,10 @@ Found by tests, the demo or real runs, and fixed:
   hook must have allowed a write or command.
 - The resume test never interrupted anything. It now kills a running factory process and recovers the stale lock.
 
-Real Claude Code runs (2.1.296; Haiku 5.5 builder, Sonnet 5.5 reviewer), total spend about $0.13:
+Real Claude Code runs (2.1.296; Haiku 5.5 builder, Sonnet 5.5 reviewer), total spend about $0.17 including the third honest
+run on the final code (after the review fixes below):
 
-- Honest slug task, twice: accepted, about 0.7 min and $0.04 each. Both builders tried a chained exploratory shell command
+- Honest slug task, three times: accepted, about 0.7 min and $0.04 each. Both builders tried a chained exploratory shell command
   first (`ls; cat …`); the hook denied it, and each continued with single tool calls.
 - Sandbox probe through `runClaude` with the production settings: the model attempted all seven probes. The hook denied the
   outside read, the protected-test edit, the chained command, the command that was not allowlisted and the `.env` read. It
@@ -71,6 +72,13 @@ copy. Its findings, all fixed:
 - **Low, 4.5:** admission did not flag a fail-to-pass test that does not exist on the base commit; it now does, unless the test
   file failed to load (a legitimate failing state).
 - **Low, 4.4:** only high-severity review findings block. That is by design; the docs now say so.
+
+A follow-up check of the same family found two more 7.1 holes, both fixed and tested end to end:
+
+- A file that matched several classes took the first one listed: `docs/helper.mjs` was docs (auto), and
+  `migrations/notes.md` was docs instead of a two-person migration. A file now counts for every class it matches.
+- `git diff` detected renames, so a move arrived as one `old => new` string that globs matched unpredictably. Diffs now use
+  `--no-renames -z`: a move is a delete plus an add, and both paths are classified.
 
 Claims that survived: path containment (traversal, drive case, `\\?\` prefixes, junctions), fail-closed verdicts, oracle protection,
 separation of duties as asserted identities, status never set by an agent's message, and all ten mechanism-off tests.

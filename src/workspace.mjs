@@ -33,17 +33,20 @@ export function protectedManifest(ws, globs) {
 }
 
 // Stage everything except the factory's own files and describe the change against the base commit.
+// No rename detection: a move is a delete plus an add, so both paths are classified and checked. Paths are raw (-z).
+const DIFF = ['-c', 'core.quotePath=false', 'diff', '--cached', '--no-renames'];
+
 export function describeChange(ws, base) {
   git(ws, ['add', '-A', '--', '.', EXCLUDE]);
-  const numstat = git(ws, ['diff', '--cached', '--numstat', base, '--', '.', EXCLUDE]);
-  const files = numstat ? numstat.split('\n').map((line) => {
-    const [added, removed, file] = line.split('\t');
-    return { file, added: Number(added) || 0, removed: Number(removed) || 0 };
-  }) : [];
-  const patch = git(ws, ['diff', '--cached', '--binary', base, '--', '.', EXCLUDE]);
+  const numstat = git(ws, [...DIFF, '-z', '--numstat', base, '--', '.', EXCLUDE]);
+  const files = numstat.split('\0').filter((rec) => rec.trim()).map((rec) => {
+    const [added, removed, ...name] = rec.replace(/^\n/, '').split('\t');
+    return { file: name.join('\t'), added: Number(added) || 0, removed: Number(removed) || 0 };
+  });
+  const patch = git(ws, [...DIFF, '--binary', base, '--', '.', EXCLUDE]);
   const changedLines = {};
   let current = null;
-  for (const line of git(ws, ['diff', '--cached', '-U0', base, '--', '.', EXCLUDE]).split('\n')) {
+  for (const line of git(ws, [...DIFF, '-U0', base, '--', '.', EXCLUDE]).split('\n')) {
     if (line.startsWith('+++ b/')) { current = line.slice(6); changedLines[current] = []; }
     const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
     if (hunk && current) {

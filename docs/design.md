@@ -110,7 +110,7 @@ hook cannot see what that code does. [trust.md](trust.md) states the consequence
 | 6.2 | Traceability, provenance | requirement-to-evidence table, digests and versions in the proof pack, `Assisted-by` trailer | `delivery`, `store` |
 | 6.3 | Cost per accepted change | cost per role and run, failed spend counted, per accepted change | `pipeline`, `metrics` |
 | 6.4 | Outcome metrics, visible | report and static dashboard lead with outcomes and stability | `metrics`, `dashboard` |
-| 7.1 | Earned autonomy | change classes → tiers; the most restrictive effective tier over every class touched decides (unclassified files keep the default); promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy` |
+| 7.1 | Earned autonomy | change classes → tiers; the most restrictive effective tier over every class touched decides (a file counts for every class it matches, unclassified files keep the default, moves count both paths); promotion after clean releases, demotion on incidents; policy limits unattended classes | `autonomy`, `workspace` |
 | 7.2 | Reversible delivery | local branch, never pushed; rollback target; incident intake | `delivery` |
 | 7.3 | Fix delivery first | `doctor` checks git, clean tree, CI config, tools, deterministic tests; runs need a recent pass | `doctor` |
 | 8.1 | Protect review capacity | WIP limit on waiting approvals; diff budget; «not verified» list in the proof pack | `approvals`, `gates/deterministic`, `pipeline` |

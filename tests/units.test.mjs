@@ -13,6 +13,8 @@ import { sealSet, openSealed, findLeaks, loadSet, sealFile } from '../src/holdou
 import { judgeReview, validateFindings } from '../src/gates/review.mjs';
 import { classify, decideTier, effectiveTier, recordRelease, recordIncident } from '../src/autonomy.mjs';
 import { buildMap, writeContextPack } from '../src/context.mjs';
+import { describeChange } from '../src/workspace.mjs';
+import { git } from '../src/util.mjs';
 import { registerExperiment, recordResult, assess, ALLOWED_CHANGES } from '../src/improve.mjs';
 import { evaluate, tagsOf } from '../src/conformance.mjs';
 import { combine, gateResult } from '../src/gates/result.mjs';
@@ -351,6 +353,32 @@ test('[P7.1] the most restrictive class touched decides, whatever the file order
   }
   assert.equal(classify([{ file: 'Dockerfile' }, { file: 'README.md' }], autonomy).name, 'default');
   assert.equal(decideTier(store, [{ file: 'README.md' }], autonomy, policy).tier, 'auto');
+});
+
+test('[P7.1] a file counts for every class it matches, so the order of classes in the configuration never matters', () => {
+  const autonomy = loadConfig(copyControl()).factory.autonomy;
+  const store = openStore(path.join(tmp(), 'store'));
+  const policy = { unattendedClasses: ['docs'] };
+  assert.equal(decideTier(store, [{ file: 'docs/helper.mjs' }], autonomy, policy).tier, 'one-human', 'docs/** and **/*.mjs');
+  assert.equal(decideTier(store, [{ file: 'migrations/notes.md' }], autonomy, policy).tier, 'two-humans', 'migrations/** and **/*.md');
+  const reversed = { ...autonomy, classes: [...autonomy.classes].reverse() };
+  assert.equal(decideTier(store, [{ file: 'migrations/notes.md' }], reversed, policy).tier, 'two-humans');
+});
+
+test('[P7.1] a moved file is classified by both its old and new path', () => {
+  const repo = tmp();
+  git(repo, ['init', '-q', '-b', 'main']);
+  fs.mkdirSync(path.join(repo, 'migrations'));
+  fs.writeFileSync(path.join(repo, 'migrations', '001.sql'), 'create table t (id int);\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'base']);
+  const base = git(repo, ['rev-parse', 'HEAD']);
+  fs.mkdirSync(path.join(repo, 'docs'));
+  fs.renameSync(path.join(repo, 'migrations', '001.sql'), path.join(repo, 'docs', 'schema.md'));
+  const change = describeChange(repo, base);
+  assert.deepEqual(change.files.map((f) => f.file).sort(), ['docs/schema.md', 'migrations/001.sql']);
+  const autonomy = loadConfig(copyControl()).factory.autonomy;
+  assert.equal(decideTier(openStore(path.join(tmp(), 'store')), change.files, autonomy, { unattendedClasses: ['docs'] }).tier, 'two-humans');
 });
 
 test('[P7.1] a file cannot ride on another class\'s earned autonomy', () => {

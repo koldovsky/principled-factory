@@ -343,6 +343,15 @@ test('[P7.1] a docs change that slips in an unclassified file is not released un
   } finally { ex.cleanup(); }
 });
 
+test('[P7.1] a docs change that writes under migrations/ needs two people, whatever the order of classes', async () => {
+  const { ex, run } = await go('docs-plus-migration-notes', { task: 'readme', setup: slugAlreadyShipped });
+  try {
+    assert.equal(run.state, 'awaiting-release-approval');
+    assert.equal(run.tier, 'two-humans');
+    assert.ok(run.changeClasses.includes('migration'));
+  } finally { ex.cleanup(); }
+});
+
 test('[P7.1] code changes wait for a human; an incident demotes the class to two approvers', async () => {
   const { ex, store, run } = await go('honest');
   try {

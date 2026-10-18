@@ -79,6 +79,12 @@ export const behaviours = {
       await tool('Edit', { file_path: 'README.md', old_string: 'turns a title into a URL slug.', new_string: 'turns a title into a URL slug, for example «Hello, World» → «hello-world».' });
       return { text: 'Documented an example.', costUsd: 0.01 };
     },
+    // A "docs" change that also writes a Markdown file under migrations/: it matches both docs and migration.
+    'docs-plus-migration-notes': async ({ tool }) => {
+      await tool('Edit', { file_path: 'README.md', old_string: 'turns a title into a URL slug.', new_string: 'turns a title into a URL slug, for example «Hello, World» → «hello-world».' });
+      await tool('Write', { file_path: 'migrations/notes.md', content: '# Migration notes\n\nNothing to migrate yet.\n' });
+      return { text: 'Documented an example.', costUsd: 0.01 };
+    },
     // A "docs" change that also slips in an unclassified infrastructure file.
     'docs-plus-infra': async ({ tool }) => {
       await tool('Edit', { file_path: 'README.md', old_string: 'turns a title into a URL slug.', new_string: 'turns a title into a URL slug, for example «Hello, World» → «hello-world».' });

@@ -6,12 +6,13 @@ const BY_RANK = ['auto', 'one-human', 'two-humans'];
 
 const defaultClass = (autonomy) => ({ name: 'default', tier: autonomy.default, earnable: false });
 
-// Every class a change touches; a file that matches no class carries the default tier.
+// Every class a change touches. A file counts for every class it matches (docs/helper.mjs is docs and code), so the order of
+// classes in the configuration never matters; a file that matches no class carries the default tier.
 export function classesTouched(files, autonomy) {
   const seen = new Map();
   for (const { file } of files) {
-    const c = autonomy.classes.find((k) => matchesAny(file, k.paths)) ?? defaultClass(autonomy);
-    if (!seen.has(c.name)) seen.set(c.name, c);
+    const matches = autonomy.classes.filter((k) => matchesAny(file, k.paths));
+    for (const c of matches.length ? matches : [defaultClass(autonomy)]) if (!seen.has(c.name)) seen.set(c.name, c);
   }
   return seen.size ? [...seen.values()] : [defaultClass(autonomy)];
 }
