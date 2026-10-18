@@ -34,6 +34,7 @@ export function buildProofPack({ run, task, attempt, change, plan, tier, cls, no
     '',
     '## Gates',
     '| Gate | Verdict | Summary |', '|---|---|---|',
+    ...(attempt.boundary ? [`| boundary | ${attempt.boundary.verdict} | ${attempt.boundary.summary.replaceAll('|', '\\|')} |`] : []),
     ...attempt.gates.map((g) => `| ${g.id} | ${g.verdict} | ${g.summary.replaceAll('|', '\\|')} |`),
     '',
     '## Not verified',

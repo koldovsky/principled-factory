@@ -15,9 +15,10 @@ import { judgeReview, writeReviewInputs } from './gates/review.mjs';
 import { checkMaintainability } from './gates/maintainability.mjs';
 import { runMutation } from './gates/mutation.mjs';
 import { FAIL, NOT_EARNED, PASS } from './gates/result.mjs';
+import { boundaryEvidence } from './gates/boundary.mjs';
 import { classify, effectiveTier } from './autonomy.mjs';
 import { buildProofPack, release } from './delivery.mjs';
-import { span, traceFile } from './trace.mjs';
+import { readTrace, span, traceFile } from './trace.mjs';
 import { FactoryError, matchesAny, nowIso, readJson, sha256, writeJsonAtomic } from './util.mjs';
 
 const DAY_MS = 86_400_000;
@@ -35,7 +36,7 @@ function factoryVersion() {
 function policyFor(role, { run, config, store, task }) {
   const r = config.factory.roles[role];
   return {
-    runId: run.id, role, workspace: run.ws,
+    runId: run.id, role, attempt: run.attempt, workspace: run.ws,
     protected: [...task.protected, `${FACTORY_DIR}/**`],
     readDeny: config.policy.dataBoundary.denyGlobs,
     bashAllow: role === 'builder'
@@ -182,6 +183,12 @@ async function gating(ctx) {
   const order = config.factory.gates.order.filter((g) => g !== 'review' && !skip(run, g));
   let testRun = null;
   attempt.notApplicable = [];
+  // The boundary must leave evidence before any gate is trusted; the command adapter has no hook (stated in the proof pack).
+  if (config.factory.agent.adapter !== 'command' && !skip(run, 'hook')) {
+    attempt.boundary = boundaryEvidence({ spans: readTrace(store, run.id), attempt: run.attempt, changedFiles: change.files.length });
+    saveRun(store, run);
+    if (attempt.boundary.verdict !== PASS) return failAttempt(ctx, `boundary: ${attempt.boundary.verdict}`, attempt.boundary.feedback, attempt.boundary);
+  }
   const changedSource = change.files.map((f) => f.file)
     .filter((f) => matchesAny(f, config.profile.sourceGlobs) && !matchesAny(f, [...task.protected, ...config.profile.testGlobs]));
   for (const id of order) {

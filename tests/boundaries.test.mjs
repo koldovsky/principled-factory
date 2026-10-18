@@ -1,5 +1,9 @@
 // Boundary mechanisms end to end, each with a «mechanism-off» run showing the attack succeeds without it.
 import { test } from 'node:test';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +18,8 @@ import { setStatus } from '../src/holdouts.mjs';
 import { readTrace } from '../src/trace.mjs';
 import { git } from '../src/util.mjs';
 import { decide } from '../src/policy/hook.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 async function go(builder, { setup, task = 'slug', unsafe = [], scripted = {}, before } = {}) {
   const ex = await setupExample(setup);
@@ -389,12 +395,40 @@ test('[P7.3] without a passing readiness check, runs are refused; doctor flags a
 });
 
 // --- 2.3 resume ------------------------------------------------------------------------------------------------------
-test('[P2.3] an interrupted run resumes from its stored stage', async () => {
-  const { ex, store, run } = await go('honest');
+test('[P2.3] a run whose process dies mid-build keeps its stage; resume needs explicit lock recovery, then completes', async () => {
+  const ex = await setupExample();
+  const store = openStore(ex.store);
   try {
-    const r = loadRun(store, run.id);
-    assert.equal(listRuns(store).length, 1);
-    assert.ok(fs.existsSync(path.join(runDir(store, r.id), 'events.jsonl')));
-    assert.ok(fs.readFileSync(path.join(r.ws, '.factory', 'progress.md'), 'utf8').startsWith('# Progress'));
+    const child = spawn(process.execPath, [path.join(ROOT, 'bin', 'factory.mjs'), 'run', 'slug', '--control', ex.control, '--target', ex.target,
+      '--store', ex.store, '--as', 'alice', '--behaviour', 'slow'], { stdio: 'ignore' });
+    let run;
+    for (let i = 0; i < 300 && !(run?.state === 'building' && run.attempt === 1); i++) { await sleep(50); run = listRuns(store)[0]; }
+    assert.equal(run?.state, 'building', 'the builder is running');
+    await sleep(300);
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    assert.equal(loadRun(store, run.id).state, 'building', 'the stored stage survives the crash');
+    await assert.rejects(resumeRun({ storeDir: ex.store, runId: run.id }), /stale lock/);
+    const f = path.join(runDir(store, run.id), 'run.json');
+    const saved = JSON.parse(fs.readFileSync(f, 'utf8')); saved.scripted = { builder: 'honest' }; fs.writeFileSync(f, JSON.stringify(saved));
+    await resumeRun({ storeDir: ex.store, runId: run.id, recover: true });
+    const done = loadRun(store, run.id);
+    assert.equal(done.state, 'awaiting-release-approval');
+    assert.equal(done.attempts.at(-1).n, 2, 'the crashed attempt still counts against the budget');
   } finally { ex.cleanup(); }
+});
+
+// --- boundary evidence ------------------------------------------------------------------------------------------------
+test('[P4.3][P5.2] a change made with no decision from the policy hook is not accepted, however clean it is', async () => {
+  const { ex, run } = await go('no-hook-evidence');
+  try {
+    assert.equal(run.attempts[0].boundary.verdict, 'NOT-EARNED');
+    assert.equal(run.attempts[0].gates.length, 0, 'no gate is trusted without boundary evidence');
+    assert.equal(run.state, 'needs-human');
+  } finally { ex.cleanup(); }
+});
+
+test('[P4.3][mechanism-off] without the boundary-evidence check, the same unconfined change is accepted', async () => {
+  const { ex, run } = await go('no-hook-evidence', { unsafe: ['hook'] });
+  try { assert.equal(run.attempts[0].boundary, undefined); assert.equal(run.state, 'awaiting-release-approval'); } finally { ex.cleanup(); }
 });

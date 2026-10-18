@@ -22,7 +22,7 @@ export async function runScripted(ctx) {
     const verdict = ctx.unsafeNoHook ? { decision: 'allow' } : decide(payload, policy, killswitch());
     if (policy.trace) {
       appendJsonLine(policy.trace, { name: `execute_tool ${toolName}`, kind: 'execute_tool', at: new Date().toISOString(), runId: policy.runId,
-        attributes: { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': toolName, 'gen_ai.agent.name': role,
+        attributes: { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': toolName, 'gen_ai.agent.name': role, 'factory.attempt': policy.attempt ?? null,
           'factory.decision': verdict.decision, 'factory.reason': verdict.reason ?? null } });
     }
     if (verdict.decision === 'deny') {

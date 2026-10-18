@@ -76,6 +76,7 @@ async function main() {
     const span = {
       name: `execute_tool ${payload.tool_name ?? '?'}`, kind: 'execute_tool', at: new Date().toISOString(), runId: policy.runId,
       attributes: { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': payload.tool_name, 'gen_ai.agent.name': policy.role,
+        'factory.attempt': policy.attempt ?? null,
         'factory.decision': result.decision, 'factory.reason': result.reason ?? null, 'factory.input': redact(payload.tool_input, policy.captureContent) },
     };
     try { fs.appendFileSync(policy.trace, JSON.stringify(span) + '\n'); } catch { /* tracing must not change the decision */ }

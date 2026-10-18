@@ -25,6 +25,7 @@ export async function setupExample({ dir = fs.mkdtempSync(path.join(os.tmpdir(),
   git(target, ['-c', 'user.name=Example', '-c', 'user.email=example@localhost', 'add', '-A']);
   git(target, ['-c', 'user.name=Example', '-c', 'user.email=example@localhost', 'commit', '-q', '-m', 'Initial slug example']);
   git(target, ['config', 'user.email', 'example@localhost']);
+  git(target, ['config', 'user.name', 'Example']);
   const s = openStore(store);
   let readiness = null;
   if (approve) {

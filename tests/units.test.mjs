@@ -18,6 +18,7 @@ import { evaluate, tagsOf } from '../src/conformance.mjs';
 import { combine, gateResult } from '../src/gates/result.mjs';
 import { parseTap, judgeVisible, judgeBaseline, integrityGate, diffGate } from '../src/gates/deterministic.mjs';
 import { validate } from '../src/schema.mjs';
+import { boundaryEvidence } from '../src/gates/boundary.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const EXAMPLE_CONTROL = path.join(here, '..', 'examples', 'slug', 'control');
@@ -325,6 +326,18 @@ test('[P4.3] a configuration that would skip a gate silently is refused: unknown
   delete noReviewer.roles.reviewer;
   fs.writeFileSync(f, JSON.stringify(noReviewer));
   assert.throws(() => loadConfig(c), /no reviewer role/);
+});
+
+test('[P4.3][P5.2] boundary evidence: changed files need an allowed write or command decided by the hook in that attempt', () => {
+  const s = (tool, decision, attempt = 1, role = 'builder') => ({ kind: 'execute_tool', attributes: { 'gen_ai.tool.name': tool, 'factory.decision': decision, 'factory.attempt': attempt, 'gen_ai.agent.name': role } });
+  assert.equal(boundaryEvidence({ spans: [], attempt: 1, changedFiles: 0 }).verdict, 'PASS', 'no change needs no evidence');
+  assert.equal(boundaryEvidence({ spans: [s('Read', 'allow')], attempt: 1, changedFiles: 2 }).verdict, 'NOT-EARNED');
+  assert.equal(boundaryEvidence({ spans: [s('Write', 'deny')], attempt: 1, changedFiles: 2 }).verdict, 'NOT-EARNED', 'a denied write changed nothing');
+  assert.equal(boundaryEvidence({ spans: [s('Write', 'allow', 1)], attempt: 2, changedFiles: 2 }).verdict, 'NOT-EARNED', 'evidence from another attempt does not count');
+  assert.equal(boundaryEvidence({ spans: [s('Write', 'allow', 1, 'reviewer')], attempt: 1, changedFiles: 2 }).verdict, 'NOT-EARNED', 'only the builder counts');
+  const ok = boundaryEvidence({ spans: [s('Edit', 'allow'), s('Read', 'deny')], attempt: 1, changedFiles: 2 });
+  assert.equal(ok.verdict, 'PASS');
+  assert.deepEqual([ok.evidence.decided, ok.evidence.denied, ok.evidence.allowedChanges], [2, 1, 1]);
 });
 
 test('[P1.2] the task schema requires non-functionals and acceptance mapping', () => {

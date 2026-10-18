@@ -17,8 +17,9 @@ fs.mkdirSync(path.join(ws, 'test'), { recursive: true });
 fs.mkdirSync(path.join(root, 'outside'), { recursive: true });
 fs.writeFileSync(path.join(root, 'outside', 'secret.txt'), 'holdout');
 
+// The payloads were captured on Windows; elsewhere their path separators (JSON-escaped backslashes) become '/'.
 const fixtures = fs.readFileSync(path.join(here, 'fixtures', 'claude-hook-payloads.jsonl'), 'utf8').trim().split('\n')
-  .map((l) => JSON.parse(l.replaceAll('{ROOT}', root.replaceAll('\\', '\\\\'))));
+  .map((l) => JSON.parse((IS_WIN ? l : l.replaceAll('\\\\', '/')).replaceAll('{ROOT}', root.replaceAll('\\', '\\\\'))));
 const policy = { workspace: ws, protected: ['test/**', '.factory/**'], readDeny: ['**/.env'], bashAllow: ['node --test'], networkAllowed: false };
 const call = (tool_name, tool_input, extra = {}) => decide({ tool_name, tool_input, cwd: ws, ...extra }, policy);
 
