@@ -203,6 +203,12 @@ and the evaluator's result), other profiles, and a `doctor` probe of the evaluat
 `npm test` (151 tests, the symlink test skipped) and `factory conformance` pass on Windows with Node 24.18. Node 22 and Linux
 are not verified yet.
 
+## 2026-10-19 · CI on the confinement
+
+With both confinement branches merged (`9c7e87c`), CI passed on Ubuntu and Windows with Node 22 and 24: 151 of 151 tests in each
+job, none skipped. The confinement and evaluator tests, their mechanism-off counterparts and the symlink test that this Windows
+account skips all ran. This supersedes the «Node 22 and Linux are not verified yet» notes above.
+
 ## Next
 
 1. Run the candidate in a process of its own, driven by the evaluator over a pipe, so that hostile code cannot rewrite the

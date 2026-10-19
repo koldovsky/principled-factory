@@ -191,7 +191,7 @@ releases are local branches that are never pushed.
   junction in the workspace path made the relative grant miss the real paths that the module loader opens, so commands start in
   the real path. End-to-end tests run a builder whose product code reads the holdouts during the tests: denied with
   `ERR_ACCESS_DENIED` while the tests pass, and read in full with confinement switched off. The flags for Node 22 come from its
-  documentation; Node 22 was not available on this machine.
+  documentation; Node 22 was not available on this machine, so CI covers it (below).
 - **Holdout evaluator, 18 October 2026, Windows 11, Node 24.18:** under the evaluator's flags, a candidate imported by the slug
   evaluator was denied reading the holdouts, the control directory, the home directory and the scratch directory it started
   in, and writing the workspace, the scratch directory, the run directory and the temp directory. A junction, a child process
@@ -201,8 +201,11 @@ releases are local branches that are never pushed.
   builder whose candidate snoops inside the evaluator: confined, its read and its writes in and outside the workspace are
   denied while the honest slug passes the holdouts; with confinement switched off, it reads the scenarios in full and keeps the
   inputs it is given in the run directory.
+- **CI, 19 October 2026:** with both confinement changes merged (`9c7e87c`), the full suite passed on Ubuntu and Windows with
+  Node 22 and 24, 151 of 151 tests in each job and none skipped
+  ([run 39173525601](https://github.com/koldovsky/principled-factory/actions/runs/39173525601)). That covers the confined
+  commands, the confined holdout evaluator, their mechanism-off tests and the symlink test this Windows account skips.
 - **Not verified:** the generic-exit profile, runs on macOS, a repeat of the sandbox probe after the `&` fix (the fix only adds
-  denials), the deployment contract (it is a contract, not code here), the confined commands and the confined holdout evaluator
-  on Node 22 and on Linux (CI runs both once the change is pushed), and a real builder typing the confined `demo.mjs` command or
-  the bare test command with nothing appended. The one real run on the confined commands appended a test file and did not run
-  the demo.
+  denials), the deployment contract (it is a contract, not code here), and a real builder typing the confined `demo.mjs`
+  command or the bare test command with nothing appended. The one real run on the confined commands appended a test file and
+  did not run the demo.
